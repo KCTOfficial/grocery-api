@@ -47,7 +47,12 @@ npm run preview   # serve the build
 
 ## Deployment
 
-`.github/workflows/docs.yml` builds the site on every change under `docs/` and deploys `master` to GitHub Pages
-(Settings → Pages → Source: **GitHub Actions**). The site URL and base path are derived from the repository
-(`https://<owner>.github.io/<repository>/`); set the `DOCS_SITE_URL` / `DOCS_BASE_PATH` repository variables to use
-a custom domain.
+The site is published with each release: pushing a version tag (`v1.2.3`) runs `.github/workflows/release.yml`,
+which tests the library, builds this site, deploys it to GitHub Pages and creates the GitHub Release. To publish
+documentation fixes between releases, run the **Release** workflow manually on `master` (Actions → Release → Run
+workflow); a manual run deploys the docs without creating a release.
+
+One-time setup: Settings → Pages → Source: **GitHub Actions**, and Settings → Environments → `github-pages` →
+Deployment branches and tags → add the tag rule `v*` (tags cannot deploy by default). The site URL and base path
+are derived from the repository (`https://<owner>.github.io/<repository>/`); set the `DOCS_SITE_URL` /
+`DOCS_BASE_PATH` repository variables to use a custom domain.

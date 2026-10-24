@@ -1,0 +1,157 @@
+# Release pipeline, triggered by pushing a version tag (v1.2.3, or v1.2.3-rc.1 for a pre-release):
+#   1. verify   the tag matches GroceryRestable::VERSION and the PHPUnit suite passes
+#   2. docs     builds the documentation website (docs/, Astro + Starlight)
+#   3. deploy   publishes the website to GitHub Pages
+#   4. release  creates the GitHub Release for the tag, with notes from CHANGELOG.md
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# Running the workflow manually (Actions → Release → Run workflow) on a branch tests and redeploys the
+# documentation without creating a release.
+#
+# One-time setup:
+#   - Settings → Pages → Build and deployment → Source: "GitHub Actions".
+#   - Settings → Environments → github-pages → Deployment branches and tags: add the tag rule "v*"
+#     (by default only the default branch may deploy, and tag deployments are rejected).
+# Optional repository variables (Settings → Secrets and variables → Actions → Variables):
+#   DOCS_SITE_URL   e.g. https://docs.example.com   (default: https://<owner>.github.io)
+#   DOCS_BASE_PATH  e.g. /                          (default: /<repository>)
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.2', '8.4']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check the tag against GroceryRestable::VERSION
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(grep -oP "const VERSION = '\K[^']+" src/GroceryRestable.php)
+          if [ "v${version}" != "$TAG" ]; then
+            echo "::error file=src/GroceryRestable.php::Tag ${TAG} does not match GroceryRestable::VERSION (${version})."
+            exit 1
+          fi
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: fileinfo, json, pdo, pdo_sqlite, sodium
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run tests
+        run: composer test
+
+  docs:
+    name: Build documentation
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve the site URL and base path
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPOSITORY: ${{ github.event.repository.name }}
+          CUSTOM_SITE_URL: ${{ vars.DOCS_SITE_URL }}
+          CUSTOM_BASE_PATH: ${{ vars.DOCS_BASE_PATH }}
+        run: |
+          echo "SITE_URL=${CUSTOM_SITE_URL:-https://${OWNER,,}.github.io}" >> "$GITHUB_ENV"
+          echo "BASE_PATH=${CUSTOM_BASE_PATH:-/${REPOSITORY}}" >> "$GITHUB_ENV"
+
+      - name: Build with Astro and upload the Pages artifact
+        uses: withastro/action@v6
+        with:
+          path: docs
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Deployments of different tags must not overlap or cancel each other.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  release:
+    name: Create GitHub Release
+    if: github.ref_type == 'tag'
+    # The release is independent of the Pages deployment: a failed deployment can be re-run on its own.
+    needs: [verify, docs]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Extract the release notes from CHANGELOG.md
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          # The body of the "## <version> ..." section, up to the next "## " heading.
+          awk -v version="$version" '
+            /^## / { if (found) exit; heading = $2; gsub(/[][]/, "", heading); found = (heading == version); next }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+
+          if grep -qiE "^## \[?${version}\]? .*unreleased" CHANGELOG.md; then
+            echo "::warning file=CHANGELOG.md::The ${version} section is still marked as unreleased."
+          fi
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          flags=()
+          # Tags with a suffix (v1.0.0-rc.1) are published as pre-releases.
+          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # Re-run of the workflow: refresh the notes of the existing release.
+            if [ -s "$notes" ]; then gh release edit "$TAG" --notes-file "$notes"; fi
+          elif [ -s "$notes" ]; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$notes" "${flags[@]}"
+          else
+            echo "::notice::No CHANGELOG.md section for ${TAG}; using notes generated by GitHub."
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes "${flags[@]}"
+          fi

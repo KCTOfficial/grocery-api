@@ -8,7 +8,7 @@ const repository = 'https://github.com/KCTOfficial/grocery-api';
 
 // https://astro.build/config
 export default defineConfig({
-	// SITE_URL / BASE_PATH are set by .github/workflows/docs.yml for GitHub Pages
+	// SITE_URL / BASE_PATH are set by .github/workflows/release.yml for GitHub Pages
 	// (https://<owner>.github.io/<repository>/). Locally the site is served from "/".
 	site: process.env.SITE_URL || 'https://kctofficial.github.io',
 	base: process.env.BASE_PATH || '/',

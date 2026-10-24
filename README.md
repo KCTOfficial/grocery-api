@@ -124,6 +124,16 @@ cd docs && npm install && npm run dev                 # documentation website on
 The documentation examples use the MySQL **classicmodels** sample database from
 [mysqltutorial.org](https://www.mysqltutorial.org/getting-started-with-mysql/mysql-sample-database/).
 
+### Releasing
+
+1. Set `GroceryRestable::VERSION` in `src/GroceryRestable.php` and date the matching `CHANGELOG.md` section
+   (`## 1.0.0 — 2026-10-24`), then commit.
+2. Tag and push: `git tag v1.0.0 && git push origin v1.0.0` (`v1.1.0-rc.1` style tags become pre-releases).
+
+The [Release workflow](.github/workflows/release.yml) checks that the tag matches `VERSION`, runs the tests on
+PHP 8.2 and 8.4, deploys the documentation website to GitHub Pages and creates the GitHub Release with the
+`CHANGELOG.md` section as release notes.
+
 ## Acknowledgements
 
 Grocery Restable is inspired by [Grocery CRUD](https://github.com/scoumbourdis/grocery-crud) by John Skoumbourdis:

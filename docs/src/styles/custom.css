@@ -32,3 +32,25 @@
 	border-radius: 0.75rem;
 	box-shadow: 0 10px 40px rgb(0 0 0 / 0.25);
 }
+
+/* Lightbox (src/components/MarkdownContent.astro): enlargeable screenshots and the caption. */
+.sl-zoomable {
+	cursor: zoom-in;
+}
+.sl-zoomable:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 3px;
+}
+.pswp__caption {
+	position: absolute;
+	inset: auto 0 0;
+	padding: 0.75rem 1rem;
+	text-align: center;
+	font-size: var(--sl-text-sm);
+	color: #fff;
+	background: linear-gradient(transparent, rgb(0 0 0 / 0.6));
+	pointer-events: none;
+}
+.pswp__caption:empty {
+	display: none;
+}

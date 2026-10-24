@@ -1,0 +1,111 @@
+---
+// Starlight's default MarkdownContent plus a PhotoSwipe lightbox for the screenshots: click (or Enter) an
+// image to view it full screen, zoom with the +/− buttons, the mouse wheel, pinch or the +/−/0 keys.
+import Default from '@astrojs/starlight/components/MarkdownContent.astro';
+---
+
+<Default><slot /></Default>
+
+<script>
+	import PhotoSwipe from 'photoswipe';
+	import 'photoswipe/style.css';
+
+	// Page content images and the landing page hero screenshot; images inside links keep their link.
+	const images = [
+		...document.querySelectorAll<HTMLImageElement>('.sl-markdown-content img, .hero img'),
+	].filter((img) => !img.closest('a'));
+
+	const ZOOM_STEP = 1.5;
+
+	const icon = (id: string, path: string) => ({
+		isCustomSVG: true,
+		inner: `<path d="${path}" id="${id}"/>`,
+		outlineID: id,
+	});
+
+	function zoomBy(pswp: PhotoSwipe, factor: number) {
+		const slide = pswp.currSlide;
+		if (!slide) return;
+		const { initial, max } = slide.zoomLevels;
+		pswp.zoomTo(Math.min(max, Math.max(initial, slide.currZoomLevel * factor)), undefined, 250);
+	}
+
+	function open(index: number) {
+		const pswp = new PhotoSwipe({
+			dataSource: images.map((img) => ({
+				src: img.currentSrc || img.src,
+				// Astro sets width/height to the original size; naturalWidth covers images without them.
+				width: Number(img.getAttribute('width')) || img.naturalWidth,
+				height: Number(img.getAttribute('height')) || img.naturalHeight,
+				alt: img.alt,
+			})),
+			index,
+			// Keep the fitted image clear of the toolbar (top) and the caption (bottom).
+			padding: { top: 56, bottom: 48, left: 16, right: 16 },
+			bgOpacity: 0.92,
+			zoom: false, // replaced by separate zoom in / zoom out buttons
+			wheelToZoom: true,
+			secondaryZoomLevel: 2,
+			maxZoomLevel: 4,
+			imageClickAction: 'zoom',
+			showHideAnimationType: 'fade',
+		});
+
+		pswp.on('uiRegister', () => {
+			pswp.ui?.registerElement({
+				name: 'zoom-out',
+				title: 'Zoom out (−)',
+				ariaLabel: 'Zoom out',
+				order: 8,
+				isButton: true,
+				html: icon('pswp__icn-zoom-out', 'M9 15h14v2H9z'),
+				onClick: () => zoomBy(pswp, 1 / ZOOM_STEP),
+			});
+			pswp.ui?.registerElement({
+				name: 'zoom-in',
+				title: 'Zoom in (+)',
+				ariaLabel: 'Zoom in',
+				order: 9,
+				isButton: true,
+				html: icon('pswp__icn-zoom-in', 'M15 9h2v6h6v2h-6v6h-2v-6H9v-2h6z'),
+				onClick: () => zoomBy(pswp, ZOOM_STEP),
+			});
+			pswp.ui?.registerElement({
+				name: 'caption',
+				order: 9,
+				isButton: false,
+				appendTo: 'root',
+				onInit: (el) => {
+					pswp.on('change', () => {
+						el.textContent = pswp.currSlide?.data.alt ?? '';
+					});
+				},
+			});
+		});
+
+		pswp.on('keydown', (event) => {
+			const { key } = event.originalEvent;
+			if (key === '+' || key === '=') zoomBy(pswp, ZOOM_STEP);
+			else if (key === '-') zoomBy(pswp, 1 / ZOOM_STEP);
+			else if (key === '0' && pswp.currSlide) pswp.zoomTo(pswp.currSlide.zoomLevels.initial, undefined, 250);
+			else return;
+			event.preventDefault();
+		});
+
+		pswp.init();
+	}
+
+	images.forEach((img, index) => {
+		img.classList.add('sl-zoomable');
+		img.tabIndex = 0;
+		img.setAttribute('role', 'button');
+		img.setAttribute('aria-label', `Enlarge image: ${img.alt}`);
+		img.addEventListener('click', () => open(index));
+		img.addEventListener('keydown', (event) => {
+			if (event.key === 'Enter' || event.key === ' ') {
+				event.preventDefault();
+				open(index);
+			}
+		});
+	});
+</script>

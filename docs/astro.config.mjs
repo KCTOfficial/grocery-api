@@ -27,6 +27,8 @@ export default defineConfig({
 			social: [{ icon: 'github', label: 'GitHub', href: repository }],
 			editLink: { baseUrl: `${repository}/edit/master/docs/` },
 			customCss: ['./src/styles/custom.css'],
+			// Adds the screenshot lightbox (PhotoSwipe) to every page.
+			components: { MarkdownContent: './src/components/MarkdownContent.astro' },
 			sidebar: [
 				{
 					label: 'Start here',

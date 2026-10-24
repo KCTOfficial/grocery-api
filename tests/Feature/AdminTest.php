@@ -1,0 +1,284 @@
+<?php
+
+declare(strict_types=1);
+
+namespace GroceryRestable\Tests\Feature;
+
+use GroceryRestable\Admin\SessionInterface;
+use GroceryRestable\GroceryRestable;
+use GroceryRestable\Http\Request;
+use GroceryRestable\Http\Response;
+use GroceryRestable\Tests\Support\Fixture;
+use PHPUnit\Framework\TestCase;
+
+final class AdminTest extends TestCase
+{
+    private string $dir;
+    private GroceryRestable $api;
+    private SessionInterface $session;
+
+    protected function setUp(): void
+    {
+        $this->dir = Fixture::directory();
+        $this->api = GroceryRestable::create([
+            'storagePath' => $this->dir . '/storage',
+            'encryptionKey' => 'base64:' . base64_encode(str_repeat('a', 32)),
+            'adminUrl' => '/admin',
+            'logger' => static fn (): null => null,
+        ]);
+        $this->session = new class () implements SessionInterface {
+            /** @var array<string, mixed> */
+            public array $data = [];
+
+            public function get(string $key): mixed
+            {
+                return $this->data[$key] ?? null;
+            }
+
+            public function set(string $key, mixed $value): void
+            {
+                $this->data[$key] = $value;
+            }
+
+            public function remove(string $key): void
+            {
+                unset($this->data[$key]);
+            }
+
+            public function regenerate(): void
+            {
+            }
+        };
+    }
+
+    protected function tearDown(): void
+    {
+        unset($this->api);
+        gc_collect_cycles();
+        Fixture::remove($this->dir);
+    }
+
+    private function request(string $method, string $path, array $body = [], array $headers = [], string $ip = '127.0.0.1', bool $form = false): Response
+    {
+        [$path, $query] = array_pad(explode('?', $path, 2), 2, '');
+        $raw = $form ? '' : json_encode($body);
+        $headers += ['Content-Type' => $form ? 'application/x-www-form-urlencoded' : 'application/json'];
+
+        return $this->api->handleAdmin(new Request($method, $path, $query, $headers, $raw, $form ? $body : [], [], $ip, 'http://localhost/admin'), $this->session);
+    }
+
+    private function runSetup(): array
+    {
+        $this->request('GET', 'setup');
+
+        return $this->request('POST', 'setup', [
+            'action' => 'finish',
+            'framework' => 'standalone',
+            'database' => ['driver' => 'sqlite', 'database' => Fixture::database($this->dir)],
+            'account' => ['username' => 'admin', 'password' => 'Secret123!', 'password_confirm' => 'Secret123!'],
+            'options' => ['auth_mode' => 'api_key', 'auto_expose' => true],
+        ], ['X-CSRF-Token' => (string) $this->session->get('csrf')])->decodedJson();
+    }
+
+    private function login(): void
+    {
+        $this->request('GET', 'login');
+        $response = $this->request('POST', 'login', ['_csrf' => $this->session->get('csrf'), 'username' => 'admin', 'password' => 'Secret123!'], [], '127.0.0.1', true);
+        self::assertSame(302, $response->getStatus());
+    }
+
+    private function xhr(string $action, array $data = []): array
+    {
+        $response = $this->request('POST', 'xhr', ['action' => $action] + $data, ['X-CSRF-Token' => (string) $this->session->get('csrf')]);
+
+        return [$response->getStatus(), $response->decodedJson()];
+    }
+
+    public function testSetupIsOnlyReachableFromTrustedIpsOrWithToken(): void
+    {
+        self::assertSame(403, $this->request('GET', 'setup', [], [], '203.0.113.9')->getStatus());
+        self::assertSame(302, $this->request('GET', '')->getStatus(), 'Admin home redirects to setup');
+        self::assertSame(200, $this->request('GET', 'setup')->getStatus());
+    }
+
+    public function testSetupOnlyOffersDetectedFrameworks(): void
+    {
+        $this->request('GET', 'setup');
+        $response = $this->request('POST', 'setup', [
+            'action' => 'finish',
+            'framework' => 'codeigniter4',
+            'database' => ['driver' => 'sqlite', 'database' => Fixture::database($this->dir)],
+            'account' => ['username' => 'admin', 'password' => 'Secret123!', 'password_confirm' => 'Secret123!'],
+        ], ['X-CSRF-Token' => (string) $this->session->get('csrf')]);
+
+        self::assertSame(422, $response->getStatus());
+        self::assertArrayHasKey('framework', $response->decodedJson()['error']['details']['fields']);
+        self::assertSame(['standalone', 'codeigniter4'], array_keys($this->api->config()->frameworkChoices()));
+        self::assertFalse($this->api->store()->isSetupCompleted());
+    }
+
+    public function testSetupCreatesKeysAndClosesItself(): void
+    {
+        $result = $this->runSetup();
+
+        self::assertTrue($result['ok']);
+        self::assertStringStartsWith('gr_', $result['keys']['anon']);
+        self::assertTrue($this->api->store()->isSetupCompleted());
+        self::assertSame(404, $this->request('GET', 'setup')->getStatus());
+
+        $api = $this->api->handle(new Request('GET', 'employees', '', ['apikey' => $result['keys']['service_role']], '', [], [], '127.0.0.1', 'http://localhost/api'));
+        self::assertSame(200, $api->getStatus());
+    }
+
+    public function testLoginCsrfAndThrottling(): void
+    {
+        $this->runSetup();
+        $this->request('GET', 'login');
+        self::assertSame(419, $this->request('POST', 'login', ['_csrf' => 'wrong', 'username' => 'admin', 'password' => 'Secret123!'], [], '127.0.0.1', true)->getStatus());
+
+        for ($i = 0; $i < 5; $i++) {
+            self::assertSame(401, $this->request('POST', 'login', ['_csrf' => $this->session->get('csrf'), 'username' => 'admin', 'password' => 'bad'], [], '10.0.0.1', true)->getStatus());
+        }
+        self::assertSame(429, $this->request('POST', 'login', ['_csrf' => $this->session->get('csrf'), 'username' => 'admin', 'password' => 'Secret123!'], [], '10.0.0.1', true)->getStatus());
+
+        $this->login();
+        self::assertSame(200, $this->request('GET', '')->getStatus());
+    }
+
+    public function testXhrRequiresSessionAndCsrf(): void
+    {
+        $this->runSetup();
+        self::assertSame(401, $this->xhr('bootstrap')[0]);
+
+        $this->login();
+        self::assertSame(419, $this->request('POST', 'xhr', ['action' => 'bootstrap'], ['X-CSRF-Token' => 'nope'])->getStatus());
+        [$status, $body] = $this->xhr('bootstrap');
+        self::assertSame(200, $status);
+        self::assertSame('admin', $body['data']['user']['username']);
+        self::assertArrayNotHasKey('jwt_secret', $body['data']['settings'], 'Secrets are never sent to the GUI');
+    }
+
+    public function testResourceLifecycleFromTheGui(): void
+    {
+        $this->runSetup();
+        $this->login();
+
+        [, $generated] = $this->xhr('resource.generate', ['table' => 'employees']);
+        $definition = $generated['data'];
+        self::assertContains('offices', array_column($definition['relations'], 'name'));
+
+        $definition['name'] = 'staff';
+        $definition['columns'] = ['lastName', 'offices'];
+        $definition['permissions'] = ['anon' => ['select']];
+        [$status] = $this->xhr('resource.save', ['definition' => $definition, 'enabled' => true]);
+        self::assertSame(200, $status);
+
+        // anon may read "staff" but not the auto exposed "offices": the default embed is skipped.
+        $response = $this->api->handle(new Request('GET', 'staff', 'limit=1', [], '', [], [], '127.0.0.1', 'http://localhost/api'));
+        self::assertSame([['lastName' => 'Murphy']], $response->decodedJson());
+        $key = $this->api->store()->createApiKey('service', 'service_role');
+        $response = $this->api->handle(new Request('GET', 'staff', 'limit=1', ['apikey' => $key], '', [], [], '127.0.0.1', 'http://localhost/api'));
+        self::assertSame('San Francisco', $response->decodedJson()[0]['offices']['city']);
+
+        $definition['columns'] = ['nope'];
+        [$status, $body] = $this->xhr('resource.save', ['definition' => $definition]);
+        self::assertSame(422, $status);
+        self::assertNotEmpty($body['error']['details']['problems']);
+
+        [, $code] = $this->xhr('resource.code', ['definition' => $definition]);
+        self::assertStringContainsString("\$api->resource('staff', 'employees')", $code['data']['code']);
+
+        [$status, $console] = $this->xhr('console', ['method' => 'GET', 'path' => 'staff?select=lastName&limit=1', 'role' => 'anon']);
+        self::assertSame(200, $console['data']['status']);
+    }
+
+    public function testBrowseAndRowEditing(): void
+    {
+        $this->runSetup();
+        $this->login();
+
+        [, $browse] = $this->xhr('table.browse', ['table' => 'offices', 'search' => 'paris']);
+        self::assertSame(1, $browse['data']['total']);
+
+        [$status] = $this->xhr('table.row.save', ['table' => 'offices', 'values' => ['officeCode' => '9', 'city' => 'Jakarta', 'country' => 'Indonesia']]);
+        self::assertSame(200, $status);
+        [, $saved] = $this->xhr('table.row.save', ['table' => 'offices', 'key' => ['officeCode' => '9'], 'values' => ['city' => 'Bandung']]);
+        self::assertSame(1, $saved['data']['affected']);
+        [$status] = $this->xhr('table.row.save', ['table' => 'offices', 'values' => ['bad column' => 1]]);
+        self::assertSame(422, $status);
+        [, $deleted] = $this->xhr('table.row.delete', ['table' => 'offices', 'key' => ['officeCode' => '9']]);
+        self::assertSame(1, $deleted['data']['affected']);
+    }
+
+    public function testSettingsKeysUsersAndExport(): void
+    {
+        $this->runSetup();
+        $this->login();
+
+        [, $settings] = $this->xhr('settings.save', ['settings' => ['jwt_secret' => str_repeat('x', 40), 'cors_origins' => 'https://a.test, https://b.test', 'max_limit' => '50']]);
+        self::assertTrue($settings['data']['jwt_secret_set']);
+        self::assertSame(['https://a.test', 'https://b.test'], $settings['data']['cors_origins']);
+        self::assertSame(422, $this->xhr('settings.save', ['settings' => ['jwt_secret' => 'short']])[0]);
+
+        [, $key] = $this->xhr('apikey.create', ['name' => 'CI', 'role' => 'editor']);
+        self::assertStringStartsWith('gr_', $key['data']['key']);
+        [, $token] = $this->xhr('jwt.generate', ['role' => 'editor', 'sub' => 'u1']);
+        self::assertCount(3, explode('.', $token['data']['token']));
+
+        self::assertSame(200, $this->xhr('user.create', ['username' => 'second', 'password' => 'Secret123!'])[0]);
+        self::assertSame(422, $this->xhr('user.create', ['username' => 'x', 'password' => 'short'])[0]);
+
+        [, $export] = $this->xhr('config.export');
+        self::assertArrayNotHasKey('password', $export['data']['connections']['default']);
+        self::assertArrayNotHasKey('jwt_secret', $export['data']['settings']);
+    }
+
+    public function testStaticAssetsAndOfflineVendorCopies(): void
+    {
+        $ok = [
+            'assets/admin.js' => 'application/javascript',
+            'assets/loader.js' => 'application/javascript',
+            'assets/favicon.svg' => 'image/svg+xml',
+            'assets/vendor/jquery/jquery.min.js' => 'application/javascript',
+            'assets/vendor/bootstrap/bootstrap.min.css' => 'text/css',
+            'assets/vendor/fontawesome/webfonts/fa-solid-900.woff2' => 'font/woff2',
+            'assets/vendor/highlightjs/highlight.min.js' => 'application/javascript',
+        ];
+        foreach ($ok as $path => $type) {
+            $response = $this->request('GET', $path);
+            self::assertSame(200, $response->getStatus(), $path);
+            self::assertStringStartsWith($type, (string) $response->getHeader('Content-Type'), $path);
+        }
+        self::assertStringContainsString('immutable', (string) $this->request('GET', 'assets/vendor/jquery/jquery.min.js')->getHeader('Cache-Control'));
+
+        foreach (['assets/../AdminKernel.php', 'assets/views/app.php', 'assets/vendor/../../View.php', 'assets/.hidden.js', 'assets/nope.js'] as $path) {
+            self::assertSame(404, $this->request('GET', $path)->getStatus(), $path);
+        }
+    }
+
+    public function testVendorCopiesMatchTheCdnIntegrityHashes(): void
+    {
+        $local = [
+            'bootstrap_css' => 'bootstrap/bootstrap.min.css',
+            'bootstrap_js' => 'bootstrap/bootstrap.bundle.min.js',
+            'jquery' => 'jquery/jquery.min.js',
+            'fontawesome' => 'fontawesome/css/all.min.css',
+            'highlightjs' => 'highlightjs/highlight.min.js',
+            'highlightjs_css' => 'highlightjs/github-dark.min.css',
+        ];
+        foreach ($local as $key => $file) {
+            $hash = 'sha384-' . base64_encode(hash_file('sha384', dirname(__DIR__, 2) . '/src/Admin/assets/vendor/' . $file, true));
+            self::assertSame(\GroceryRestable\Admin\View::CDN[$key]['sri'], $hash, $file . ' differs from the CDN version');
+        }
+    }
+
+    public function testSecretsAreEncryptedAtRest(): void
+    {
+        $this->runSetup();
+        $this->api->store()->saveConnection('other', ['driver' => 'mysql', 'database' => 'x', 'password' => 'super-secret']);
+        $raw = (string) file_get_contents($this->dir . '/storage/grocery-restable.sqlite');
+
+        self::assertStringNotContainsString('super-secret', $raw);
+        self::assertSame('super-secret', $this->api->store()->connection('other')['password']);
+    }
+}

@@ -1,0 +1,231 @@
+/*
+ * Grocery Restable admin — phpMyAdmin ("pmahomme") inspired theme on top of Bootstrap 5.
+ */
+:root {
+    --gr-link: #235a81;
+    --gr-link-hover: #1d4a6a;
+    --gr-border: #aaa;
+    --gr-nav-bg: #f3f3f3;
+    --gr-nav-width: 270px;
+    --gr-header-from: #fdfdfd;
+    --gr-header-to: #dcdcdc;
+    --gr-row-odd: #fff;
+    --gr-row-even: #f1f1f1;
+    --gr-row-hover: #ced6df;
+    --gr-row-selected: #c7d4e1;
+    --gr-code: #7c3aed;
+    --gr-gui: #198754;
+    --gr-auto: #0d6efd;
+    --bs-body-font-size: .84rem;
+}
+
+html, body { height: 100%; }
+body { font-size: .84rem; color: #222; background: #fff; }
+a { color: var(--gr-link); text-decoration: none; }
+a:hover { color: var(--gr-link-hover); text-decoration: underline; }
+code, pre, .font-monospace { font-size: .8rem; }
+
+/* ---------------------------------------------------------------- layout */
+.gr-layout { display: flex; height: 100vh; overflow: hidden; }
+.gr-nav {
+    width: var(--gr-nav-width); min-width: var(--gr-nav-width); background: var(--gr-nav-bg);
+    border-right: 1px solid var(--gr-border); display: flex; flex-direction: column;
+}
+.gr-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.gr-content { flex: 1; overflow: auto; padding: 1rem 1.25rem 0; }
+.gr-content > :last-child:not(.gr-sticky-footer) { margin-bottom: 2rem; }
+
+/* ---------------------------------------------------------------- navigation */
+.gr-logo {
+    display: flex; align-items: center; gap: .5rem; padding: .7rem .9rem .5rem; font-size: 1.35rem;
+    color: #e46c00; letter-spacing: -.5px;
+}
+.gr-logo:hover { text-decoration: none; color: #c65d00; }
+.gr-logo span { color: #6c757d; font-weight: 300; }
+.gr-logo strong { color: var(--gr-link); font-weight: 700; }
+.gr-nav-icons { display: flex; gap: .15rem; padding: 0 .75rem .5rem; border-bottom: 1px solid #ddd; }
+.gr-nav-icons a {
+    display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 3px; color: #555;
+}
+.gr-nav-icons a:hover { background: #ddd; color: var(--gr-link); text-decoration: none; }
+.gr-nav-filter { position: relative; padding: .5rem .75rem; }
+.gr-nav-filter i { position: absolute; left: 1.25rem; top: 1rem; color: #999; font-size: .75rem; }
+.gr-nav-filter input { padding-left: 1.6rem; }
+.gr-tree { flex: 1; overflow: auto; padding: 0 .25rem .5rem .5rem; }
+.gr-tree ul { list-style: none; margin: 0; padding: 0; }
+.gr-tree ul ul { margin-left: .9rem; border-left: 1px dotted #999; }
+.gr-tree li { white-space: nowrap; }
+.gr-tree .gr-node {
+    display: flex; align-items: center; gap: .35rem; padding: .12rem .35rem; border-radius: 3px; color: #333; cursor: pointer;
+}
+.gr-tree .gr-node:hover { background: #e2e2e2; text-decoration: none; }
+.gr-tree .gr-node.active { background: var(--gr-row-selected); font-weight: 600; }
+.gr-tree .gr-node .fa-database { color: #6c757d; }
+.gr-tree .gr-node .fa-table { color: #b18f4b; }
+.gr-tree .gr-node .fa-eye { color: #6f42c1; }
+.gr-tree .gr-toggle { width: .8rem; color: #888; font-size: .7rem; }
+.gr-tree .gr-label { overflow: hidden; text-overflow: ellipsis; }
+.gr-nav-legend { padding: .35rem .75rem; border-top: 1px solid #ddd; color: #666; }
+.gr-dot { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; margin-left: .35rem; vertical-align: middle; }
+.gr-dot-code { background: var(--gr-code); }
+.gr-dot-gui { background: var(--gr-gui); }
+.gr-dot-auto { background: var(--gr-auto); }
+
+/* ---------------------------------------------------------------- breadcrumb & tabs */
+.gr-breadcrumb {
+    display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; padding: .45rem 1rem; min-height: 2.2rem;
+    background: linear-gradient(#888, #555); color: #fff; font-weight: 600; border-bottom: 1px solid #333;
+}
+.gr-breadcrumb a { color: #fff; }
+.gr-breadcrumb .sep { color: #ccc; margin: 0 .15rem; }
+.gr-breadcrumb .muted { color: #ddd; font-weight: 400; }
+.gr-tabs {
+    display: flex; flex-wrap: wrap; list-style: none; margin: 0; padding: .35rem .75rem 0; gap: .15rem;
+    background: linear-gradient(#fdfdfd, #e5e5e5); border-bottom: 1px solid var(--gr-border);
+}
+.gr-tabs:empty { display: none; }
+.gr-tabs a {
+    display: inline-flex; align-items: center; gap: .35rem; padding: .35rem .8rem; color: var(--gr-link);
+    border: 1px solid transparent; border-bottom: 0; border-radius: .35rem .35rem 0 0; position: relative; top: 1px;
+}
+.gr-tabs a:hover { background: #fff; border-color: #ccc; text-decoration: none; }
+.gr-tabs a.active { background: #fff; border-color: var(--gr-border); color: #000; font-weight: 600; }
+
+/* ---------------------------------------------------------------- panels (phpMyAdmin fieldsets) */
+.gr-panel {
+    border: 1px solid var(--gr-border); border-radius: 4px; background: #fff; margin-bottom: 1rem;
+    box-shadow: 1px 1px 4px rgba(0, 0, 0, .08);
+}
+.gr-panel-title {
+    padding: .45rem .75rem; font-weight: 700; color: #444; border-bottom: 1px solid var(--gr-border);
+    background: linear-gradient(var(--gr-header-from), var(--gr-header-to)); border-radius: 4px 4px 0 0;
+    display: flex; align-items: center; gap: .5rem;
+}
+.gr-panel-title .gr-actions { margin-left: auto; display: flex; gap: .35rem; font-weight: 400; }
+.gr-panel-body { padding: .75rem; }
+.gr-panel-footer { padding: .5rem .75rem; background: #eee; border-top: 1px solid var(--gr-border); border-radius: 0 0 4px 4px; }
+.gr-help { color: #666; font-size: .78rem; }
+.gr-section-title { font-size: 1rem; font-weight: 600; margin: 0 0 .75rem; color: #444; }
+.gr-section-title i { color: #888; margin-right: .35rem; }
+
+/* ---------------------------------------------------------------- data tables */
+.gr-table { width: auto; min-width: 50%; border-collapse: collapse; margin-bottom: .75rem; font-size: .82rem; }
+.gr-table.w-100 { width: 100%; }
+.gr-table th, .gr-table td { border: 1px solid #ccc; padding: .25rem .5rem; vertical-align: middle; }
+.gr-table thead th {
+    background: linear-gradient(#fff, #ccc); color: #333; font-weight: 700; white-space: nowrap; border-color: #aaa;
+}
+.gr-table thead th.sortable { cursor: pointer; color: var(--gr-link); }
+.gr-table thead th.sortable:hover { text-decoration: underline; }
+.gr-table tbody tr:nth-child(odd) { background: var(--gr-row-odd); }
+.gr-table tbody tr:nth-child(even) { background: var(--gr-row-even); }
+.gr-table tbody tr:hover { background: var(--gr-row-hover); }
+.gr-table td.gr-actions-cell { white-space: nowrap; }
+.gr-table td.gr-actions-cell a { margin-right: .5rem; }
+.gr-table .gr-null { color: #999; font-style: italic; }
+.gr-table td.gr-cell { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr-table input[type=checkbox] { cursor: pointer; }
+.gr-table .form-control-sm, .gr-table .form-select-sm { font-size: .78rem; padding: .1rem .35rem; min-height: 0; }
+.gr-fields-grid th { position: sticky; top: 0; z-index: 1; }
+.gr-fields-grid td:first-child { font-weight: 600; }
+.gr-fields-grid .gr-virtual td:first-child { font-style: italic; color: #6f42c1; }
+
+/* ---------------------------------------------------------------- misc */
+.gr-badge-code { background: var(--gr-code) !important; }
+.gr-badge-gui { background: var(--gr-gui) !important; }
+.gr-badge-auto { background: var(--gr-auto) !important; }
+.gr-badge-framework { background: #6c757d !important; }
+.gr-method { display: inline-block; min-width: 4.2rem; text-align: center; font-weight: 700; border-radius: 3px; color: #fff; font-size: .72rem; padding: .1rem .3rem; }
+.gr-method-get { background: #0d6efd; }
+.gr-method-post { background: #198754; }
+.gr-method-put { background: #fd7e14; }
+.gr-method-patch { background: #6f42c1; }
+.gr-method-delete { background: #dc3545; }
+.gr-endpoint { border: 1px solid #ddd; border-radius: 4px; margin-bottom: .35rem; }
+.gr-endpoint > summary { list-style: none; padding: .35rem .5rem; cursor: pointer; display: flex; gap: .6rem; align-items: center; }
+.gr-endpoint > summary::-webkit-details-marker { display: none; }
+.gr-endpoint > summary:hover { background: #f6f8fa; }
+.gr-endpoint .gr-endpoint-body { padding: .5rem .75rem; border-top: 1px solid #eee; background: #fcfcfc; }
+.gr-code {
+    background: #1e1e1e; color: #d4d4d4; padding: .75rem 1rem; border-radius: 4px; overflow: auto; max-height: 60vh;
+    font-size: .78rem; white-space: pre; margin: 0;
+}
+.gr-code-light { background: #f6f8fa; color: #24292f; border: 1px solid #ddd; }
+.gr-stat { border: 1px solid #ddd; border-radius: 4px; padding: .75rem; background: linear-gradient(#fff, #f3f3f3); }
+.gr-stat .value { font-size: 1.6rem; font-weight: 700; color: var(--gr-link); line-height: 1.1; }
+.gr-stat .label { color: #666; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+.gr-kv th { width: 34%; font-weight: 600; color: #555; background: #f5f5f5; }
+.gr-sticky-footer {
+    position: sticky; bottom: 0; margin: 1rem -1.25rem 0; padding: .6rem 1.25rem; background: #eee;
+    border-top: 1px solid var(--gr-border); display: flex; gap: .5rem; align-items: center; z-index: 5;
+}
+.gr-pagination { display: flex; align-items: center; gap: .35rem; margin: .5rem 0; flex-wrap: wrap; }
+.gr-pagination .form-select { width: auto; }
+.gr-empty { padding: 2rem; text-align: center; color: #777; border: 1px dashed #ccc; border-radius: 4px; background: #fafafa; }
+.gr-key { font-family: var(--bs-font-monospace); word-break: break-all; background: #fff8e1; border: 1px solid #f0c36d; padding: .5rem; border-radius: 4px; }
+.gr-check-grid label { margin-right: 1rem; white-space: nowrap; }
+.toast { font-size: .82rem; }
+
+/* ---------------------------------------------------------------- login & setup */
+.gr-credit { text-align: center; color: #888; font-size: .75rem; margin-top: 1.25rem; }
+.gr-credit a { color: #888; text-decoration: underline; }
+.gr-login-body { background: #f3f3f3; min-height: 100vh; }
+.gr-login, .gr-setup { max-width: 460px; margin: 0 auto; padding: 3rem 1rem; }
+.gr-setup { max-width: 760px; }
+.gr-login-logo { text-align: center; font-size: 2.4rem; color: #e46c00; display: flex; justify-content: center; align-items: center; gap: .6rem; }
+.gr-login-logo span { color: #6c757d; font-weight: 300; }
+.gr-login-logo strong { color: var(--gr-link); }
+.gr-login-title { text-align: center; font-size: 1.2rem; font-weight: 400; color: #444; margin: .5rem 0 1.25rem; }
+.gr-steps { display: flex; list-style: none; padding: 0; margin: 0 0 1rem; gap: .25rem; counter-reset: step; }
+.gr-steps li { flex: 1; text-align: center; font-size: .78rem; color: #777; padding: .4rem .25rem; border-bottom: 3px solid #ddd; }
+.gr-steps li span {
+    display: inline-flex; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #ddd; color: #555;
+    align-items: center; justify-content: center; font-weight: 700; margin-right: .2rem;
+}
+.gr-steps li.active { color: var(--gr-link); border-color: var(--gr-link); font-weight: 600; }
+.gr-steps li.active span, .gr-steps li.done span { background: var(--gr-link); color: #fff; }
+.gr-steps li.done { color: #198754; border-color: #198754; }
+.gr-choice { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; cursor: pointer; height: 100%; display: block; background: #fff; }
+.gr-choice:hover { border-color: var(--gr-link); }
+.gr-choice input { margin-right: .4rem; }
+.gr-choice.disabled { opacity: .55; cursor: not-allowed; }
+.gr-choice .gr-choice-icon { font-size: 1.6rem; color: #e46c00; display: block; margin-bottom: .25rem; }
+
+@media (max-width: 900px) {
+    .gr-layout { flex-direction: column; height: auto; overflow: visible; }
+    .gr-nav { width: 100%; min-width: 0; max-height: 45vh; }
+    .gr-content { overflow: visible; }
+}
+
+/* resource editor grid sizing */
+.gr-fields-grid [data-k=label] { min-width: 8.5rem; }
+.gr-fields-grid [data-k=type] { min-width: 9.5rem; }
+.gr-fields-grid [data-k=extras] { min-width: 8rem; }
+.gr-fields-grid [data-k=rules] { min-width: 13rem; }
+.gr-fields-grid ::placeholder, .gr-panel ::placeholder { color: #b5b5b5; opacity: 1; }
+.gr-login-logo small { font-size: .9rem; }
+
+/* ---------------------------------------------------------------- flow helpers */
+.gr-dot-none { background: transparent; border: 1px solid #999; }
+.gr-badge-none { background: #f1f1f1; color: #777; border: 1px dashed #aaa; font-weight: 500; }
+.gr-row-muted td { color: #777; }
+.gr-explain { border: 1px solid #b6d4fe; background: #f0f6ff; border-radius: 4px; padding: .6rem .8rem; }
+.gr-steps-list { list-style: none; margin: 0; padding: 0; }
+.gr-step { display: flex; gap: .75rem; padding: .55rem .25rem; border-bottom: 1px solid #eee; }
+.gr-step:last-child { border-bottom: 0; }
+.gr-step-icon { font-size: 1.15rem; line-height: 1.4; width: 1.4rem; text-align: center; }
+.gr-step-done .gr-step-icon { color: #198754; }
+.gr-step-warn .gr-step-icon { color: #e46c00; }
+.gr-step-todo .gr-step-icon { color: #9aa5b1; }
+#gr-status:empty { display: none; }
+.gr-status { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .4rem 1.25rem; font-size: .82rem; border-bottom: 1px solid var(--gr-border); }
+.gr-status-on { background: #edf7ed; }
+.gr-status-on > .fa-solid:first-child { color: #198754; }
+.gr-status-off { background: #fff6e5; }
+.gr-status-off > .fa-solid:first-child { color: #e46c00; }
+
+/* ---------------------------------------------------------------- highlight.js */
+.gr-code { background: #0d1117; color: #c9d1d9; }
+.gr-code > code { font-size: inherit; white-space: pre; }
+.gr-code > code.hljs { padding: 0; background: transparent; overflow: visible; }
+#gr-toasts code { color: inherit; font-weight: 600; }

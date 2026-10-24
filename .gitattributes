@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.png binary
+*.zip binary
+
+# Not shipped in the Composer package
+/tests export-ignore
+/examples export-ignore
+/docs export-ignore
+/.github export-ignore
+/phpunit.xml.dist export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore

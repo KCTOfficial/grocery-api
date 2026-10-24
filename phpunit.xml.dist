@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         failOnWarning="true"
+         failOnRisky="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+        <exclude>
+            <directory>src/CodeIgniter4</directory>
+            <directory>src/Admin/views</directory>
+        </exclude>
+    </source>
+    <php>
+        <!-- Optional MySQL integration test, e.g. mysql://root:@127.0.0.1:3306/grocery_restable_test -->
+        <env name="GROCERY_RESTABLE_TEST_MYSQL" value="" force="false"/>
+    </php>
+</phpunit>

@@ -18,9 +18,9 @@ enables the drivers that are installed on the server.
 
 | Engine | PDO | MySQLi | CodeIgniter 4 driver |
 |---|---|---|---|
-| MySQL 5.7+ / MariaDB 10.3+ | ✅ `pdo_mysql` | ✅ `mysqli` | ✅ `MySQLi` |
-| PostgreSQL 11+ | ✅ `pdo_pgsql` | — | ✅ `Postgre` |
-| SQLite 3.26+ | ✅ `pdo_sqlite` | — | ✅ `SQLite3` |
+| MySQL 5.7+ / MariaDB 10.3+ | Yes, `pdo_mysql` | Yes, `mysqli` | Yes, `MySQLi` |
+| PostgreSQL 11+ | Yes, `pdo_pgsql` | — | Yes, `Postgre` |
+| SQLite 3.26+ | Yes, `pdo_sqlite` | — | Yes, `SQLite3` |
 | Microsoft SQL Server | not supported yet | — | not supported yet (`SQLSRV`) |
 | Oracle | not supported yet | — | not supported yet (`OCI8`) |
 

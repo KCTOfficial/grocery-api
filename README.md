@@ -85,7 +85,7 @@ See **[CodeIgniter 4](docs/src/content/docs/codeigniter4.md)**. Without a framew
 
 ## Documentation
 
-📖 **Documentation website:** <https://kctofficial.github.io/grocery-api/> (built from [`docs/`](docs) with
+**Documentation website:** <https://kctofficial.github.io/grocery-api/> (built from [`docs/`](docs) with
 [Astro Starlight](https://starlight.astro.build) and published by GitHub Actions). The Markdown sources can also be
 read directly on GitHub:
 

@@ -66,6 +66,19 @@ GET /api/storage/avatars/users/42/me.png
 - A driver for your database: `pdo_mysql` or `mysqli`, `pdo_pgsql`, `pdo_sqlite`
 - CodeIgniter 4.5+ for the CodeIgniter integration (tested with 4.7)
 
+## Installation
+
+Install the package from [Packagist](https://packagist.org/packages/kctofficial/grocery-restable) with
+[Composer](https://getcomposer.org):
+
+```bash
+composer require kctofficial/grocery-restable
+```
+
+The same package serves both integrations: CodeIgniter 4 picks it up automatically (see the quick start below), and
+without a framework you load it through Composer's autoloader (`vendor/autoload.php`), see
+[No framework](docs/src/content/docs/no-framework.md).
+
 ## Quick start (CodeIgniter 4)
 
 ```bash

@@ -15,7 +15,7 @@ hero:
       link: overview/
       variant: secondary
     - text: View on GitHub
-      link: https://github.com/KCTOfficial/grocery-api
+      link: https://github.com/KCTOfficial/grocery-restable
       icon: external
       variant: minimal
 ---

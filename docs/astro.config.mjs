@@ -4,7 +4,7 @@ import starlight from '@astrojs/starlight';
 import { satteri } from '@astrojs/markdown-satteri';
 import mdLinks from './src/plugins/md-links.mjs';
 
-const repository = 'https://github.com/KCTOfficial/grocery-api';
+const repository = 'https://github.com/KCTOfficial/grocery-restable';
 
 // https://astro.build/config
 export default defineConfig({

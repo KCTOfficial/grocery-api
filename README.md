@@ -85,7 +85,7 @@ See **[CodeIgniter 4](docs/src/content/docs/codeigniter4.md)**. Without a framew
 
 ## Documentation
 
-**Documentation website:** <https://kctofficial.github.io/grocery-api/> (built from [`docs/`](docs) with
+**Documentation website:** <https://kctofficial.github.io/grocery-restable/> (built from [`docs/`](docs) with
 [Astro Starlight](https://starlight.astro.build) and published by GitHub Actions). The Markdown sources can also be
 read directly on GitHub:
 
@@ -123,16 +123,6 @@ cd docs && npm install && npm run dev                 # documentation website on
 
 The documentation examples use the MySQL **classicmodels** sample database from
 [mysqltutorial.org](https://www.mysqltutorial.org/getting-started-with-mysql/mysql-sample-database/).
-
-### Releasing
-
-1. Set `GroceryRestable::VERSION` in `src/GroceryRestable.php` and date the matching `CHANGELOG.md` section
-   (`## 1.0.0 — 2026-10-24`), then commit.
-2. Tag and push: `git tag v1.0.0 && git push origin v1.0.0` (`v1.1.0-rc.1` style tags become pre-releases).
-
-The [Release workflow](.github/workflows/release.yml) checks that the tag matches `VERSION`, runs the tests on
-PHP 8.2 and 8.4, deploys the documentation website to GitHub Pages and creates the GitHub Release with the
-`CHANGELOG.md` section as release notes.
 
 ## Acknowledgements
 

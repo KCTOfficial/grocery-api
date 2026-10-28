@@ -173,4 +173,4 @@ respective owner and is used here only to describe the inspiration and API compa
 
 ## License
 
-[MIT](LICENSE) © KCT
+[MIT](LICENSE) © KCT.

@@ -15,6 +15,8 @@ use GroceryRestable\Database\Schema\Table;
  */
 final class AutoResourceFactory
 {
+    /** Columns never guessed as a relation title (they could reveal secrets through embedding). */
+    private const SENSITIVE_COLUMN = '/pass|secret|token|hash|salt|key|otp|pin/i';
     private const TITLE_CANDIDATES = ['name', 'title', 'label', 'fullname', 'full_name', 'username', 'email', 'code', 'subject', 'description'];
 
     /**
@@ -107,8 +109,9 @@ final class AutoResourceFactory
                 return $byLower[$candidate];
             }
         }
+        // Otherwise the first text column, but never one that looks like a secret.
         foreach ($table->columns as $name => $column) {
-            if (! $column->primary && $column->type === 'string') {
+            if (! $column->primary && $column->type === 'string' && ! preg_match(self::SENSITIVE_COLUMN, $name)) {
                 return $name;
             }
         }

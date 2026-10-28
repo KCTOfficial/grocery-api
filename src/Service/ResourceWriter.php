@@ -19,6 +19,7 @@ use GroceryRestable\Resource\Relation;
 use GroceryRestable\Resource\ResolvedResource;
 use GroceryRestable\Resource\Resource;
 use GroceryRestable\Store\ConfigStore;
+use GroceryRestable\Support\Uuid;
 use GroceryRestable\Validation\ValidatorInterface;
 use InvalidArgumentException;
 use Throwable;
@@ -71,6 +72,7 @@ final class ResourceWriter
                         throw ApiException::badRequest('Each row must be a JSON object.');
                     }
                     if ($upsert && $pk !== null && isset($row[$pk]) && $this->reader->findRaw($ctx, $row[$pk], $auth) !== null) {
+                        $this->assertEnabled($ctx, 'update');
                         $this->auth->authorize($auth, $ctx->resource, 'update');
                         $this->updateRow($ctx, $row[$pk], $row, [], $request->isFormBody(), $auth, false, $stored);
                         $ids[] = $row[$pk];
@@ -115,7 +117,7 @@ final class ResourceWriter
     }
 
     /**
-     * PATCH /resource?filters — apply the same changes to every matching row.
+     * PATCH /resource?filters - apply the same changes to every matching row.
      *
      * @return list<int|string>
      */
@@ -195,6 +197,9 @@ final class ResourceWriter
             }
             $data[$key] = $this->normalize($resource, $ctx->table->columns[$key], $value, $request->isFormBody(), $ctx->db->driver());
         }
+        if (! isset($data[$pk]) && ($generated = $this->newId($ctx)) !== null) {
+            $data[$pk] = $generated;
+        }
         $this->assertUnique($ctx, $data, null);
 
         return $ctx->db->transaction(function () use ($ctx, $id, $data, $auth, $pk): int|string|null {
@@ -206,6 +211,7 @@ final class ResourceWriter
                     $this->syncManyToMany($ctx, $relation, $newId, $this->currentRelationIds($ctx, $relation, $id));
                 }
             }
+            $this->assertInScope($ctx, $newId, $auth);
             $this->runAfter($ctx->resource, 'after_clone', [$data + [$pk => $newId], $newId, $auth]);
 
             return $newId;
@@ -220,6 +226,7 @@ final class ResourceWriter
         $this->assertEnabled($ctx, 'update');
         $this->auth->authorize($auth, $ctx->resource, 'update');
         $upload = $ctx->resource->getUpload($field) ?? throw ApiException::notFound('"' . $field . '" is not an upload field.');
+        $this->assertFieldWritable($ctx, $field);
         $file = $request->file('file') ?? $request->file($field) ?? throw ValidationException::forField('file', 'Send the file in a multipart "file" field.');
 
         $existing = $this->reader->findRaw($ctx, $id, $auth) ?? throw ApiException::notFound();
@@ -249,6 +256,7 @@ final class ResourceWriter
         $this->assertEnabled($ctx, 'update');
         $this->auth->authorize($auth, $ctx->resource, 'update');
         $upload = $ctx->resource->getUpload($field) ?? throw ApiException::notFound('"' . $field . '" is not an upload field.');
+        $this->assertFieldWritable($ctx, $field);
         $existing = $this->reader->findRaw($ctx, $id, $auth) ?? throw ApiException::notFound();
 
         $ctx->db->execute(
@@ -270,6 +278,9 @@ final class ResourceWriter
         }
         $this->auth->authorize($auth, $ctx->resource, 'select');
         $upload = $ctx->resource->getUpload($field) ?? throw ApiException::notFound('"' . $field . '" is not an upload field.');
+        if (! in_array($field, $ctx->resource->queryableColumns($ctx->table), true)) {
+            throw ApiException::forbidden('The field "' . $field . '" is not readable.');
+        }
         $row = $this->reader->findRaw($ctx, $id, $auth) ?? throw ApiException::notFound();
         $path = $this->uploads->fieldFilePath($upload, isset($row[$field]) ? (string) $row[$field] : null)
             ?? throw ApiException::notFound('No file stored for "' . $field . '".');
@@ -304,8 +315,9 @@ final class ResourceWriter
         $id = $replacement !== null ? $replacement($data, $auth) : $this->insertSql($ctx, $data);
 
         foreach ($relations as $name => $ids) {
-            $this->syncManyToMany($ctx, $resource->getRelation($name), $id, $ids);
+            $this->syncManyToMany($ctx, $resource->getRelation($name), $id, $ids, $auth);
         }
+        $this->assertInScope($ctx, $id, $auth);
 
         $pk = $ctx->primaryKey();
         $this->runAfter($resource, 'after_insert', [$pk !== null ? $data + [$pk => $id] : $data, $id, $auth]);
@@ -354,8 +366,9 @@ final class ResourceWriter
         }
 
         foreach ($relations as $name => $ids) {
-            $this->syncManyToMany($ctx, $resource->getRelation($name), $id, $ids);
+            $this->syncManyToMany($ctx, $resource->getRelation($name), $id, $ids, $auth);
         }
+        $this->assertInScope($ctx, $id, $auth);
 
         $this->runAfter($resource, 'after_update', [$data, $id, $auth]);
 
@@ -476,6 +489,17 @@ final class ResourceWriter
         foreach ($resource->forcedValues() as $field => $value) {
             if ($table->hasColumn($field)) {
                 $columns[$field] = $value;
+            }
+        }
+
+        if ($mode === 'create' && $pk !== null) {
+            $sent = $columns[$pk] ?? null;
+            if ($sent !== null && $sent !== '') {
+                if (in_array($resource->getIdGenerator(), Uuid::GENERATORS, true) && ! Uuid::isValid((string) $sent)) {
+                    $errors[$pk] = 'The ' . $resource->label($pk) . ' must be a UUID.';
+                }
+            } elseif (($generated = $this->newId($ctx)) !== null) {
+                $columns[$pk] = $generated;
             }
         }
 
@@ -776,6 +800,44 @@ final class ResourceWriter
         }
     }
 
+    private function assertFieldWritable(ResolvedResource $ctx, string $field): void
+    {
+        if (! in_array($field, $ctx->resource->writableFields($ctx->table, 'update'), true)) {
+            throw ApiException::forbidden('The field "' . $field . '" is not writable.');
+        }
+    }
+
+    /**
+     * Row level security on writes: a non service caller must not create a row, or move one, outside
+     * of its scope() (e.g. POST {"owner_id": "someone else"}). Runs inside the transaction, so the
+     * write is rolled back.
+     */
+    private function assertInScope(ResolvedResource $ctx, int|string|null $id, AuthContext $auth): void
+    {
+        if ($id === null || $auth->isService() || $ctx->resource->getScopes() === [] || $ctx->primaryKey() === null) {
+            return;
+        }
+        if ($this->reader->findRaw($ctx, $id, $auth) === null) {
+            throw ApiException::forbidden('The record would be outside of the rows you are allowed to access.');
+        }
+    }
+
+    /**
+     * Primary key for a new row, or null when the database (auto increment, default) provides it.
+     */
+    private function newId(ResolvedResource $ctx): ?string
+    {
+        $pk = $ctx->primaryKey();
+        $column = $pk !== null ? $ctx->table->column($pk) : null;
+        if ($column === null || $column->autoIncrement || $column->generated) {
+            return null;
+        }
+        $generator = $ctx->resource->getIdGenerator()
+            ?? ($column->type === 'uuid' && $column->default === null ? 'uuid' : 'none');
+
+        return $generator === 'none' ? null : Uuid::generate($generator);
+    }
+
     /**
      * @param array<string, mixed> $data
      */
@@ -811,10 +873,17 @@ final class ResourceWriter
      *
      * @param list<scalar> $ids
      */
-    private function syncManyToMany(ResolvedResource $ctx, Relation $relation, int|string|null $id, array $ids): void
+    private function syncManyToMany(ResolvedResource $ctx, Relation $relation, int|string|null $id, array $ids, ?AuthContext $auth = null): void
     {
         if ($id === null) {
             throw new ConfigurationException('Cannot write relation "' . $relation->name . '" without a primary key value.');
+        }
+        if ($auth !== null && ! $auth->isService()) {
+            $visible = $this->reader->visibleRelatedIds($ctx, $relation, $ids, $auth);
+            $unknown = array_values(array_diff(array_map('strval', $ids), $visible));
+            if ($unknown !== []) {
+                throw ValidationException::forField($relation->name, 'Unknown or inaccessible ids: ' . implode(', ', array_slice($unknown, 0, 10)) . '.');
+            }
         }
         $grammar = $ctx->grammar;
         $junction = $grammar->wrapTable((string) $relation->junctionTable);

@@ -11,7 +11,7 @@ They do not require foreign keys in the database, but foreign keys are used to d
 | Type | Grocery CRUD | Meaning | Embedded as |
 |---|---|---|---|
 | `belongs_to` | `set_relation` | `this.field → related.key` | object or `null` |
-| `has_many` | — | `child.foreignKey → this.key` | array |
+| `has_many` | - | `child.foreignKey → this.key` | array |
 | `many_to_many` | `set_relation_n_n` | `this.pk ← junction → selection.pk` | array |
 
 ## belongs_to

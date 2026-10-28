@@ -28,6 +28,20 @@ final class Conditions
     /** @var list<array{boolean: string, column: string, operator: string, value: mixed}> */
     private array $items = [];
 
+    /** Strict conditions (row level security scopes) never turn "= null" into "IS NULL". */
+    private bool $strict = false;
+
+    /**
+     * Conditions for a scope() callback: comparing with a missing value (null) matches no row.
+     */
+    public static function forScope(): self
+    {
+        $conditions = new self();
+        $conditions->strict = true;
+
+        return $conditions;
+    }
+
     public function where(string|array $column, mixed $operatorOrValue = null, mixed $value = null): self
     {
         return $this->add('and', $column, $operatorOrValue, $value, func_num_args());
@@ -166,7 +180,10 @@ final class Conditions
             $operator = $operator === '<>' ? '!=' : $operator;
             $value = $operatorOrValue;
 
-            if ($operator === '=' && $value === null) {
+            if ($operator === '=' && $value === null && $this->strict) {
+                // Scopes: where('owner_id', $auth->userId()) without a user must match nothing, not "IS NULL".
+                return $this->push($boolean, $m[1], 'in', []);
+            } elseif ($operator === '=' && $value === null) {
                 $operator = 'is null';
             } elseif ($operator === '!=' && $value === null) {
                 $operator = 'is not null';

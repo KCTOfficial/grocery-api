@@ -72,7 +72,7 @@ Or, preferably, define it once in `app/Config/GroceryRestable.php` (`$api->resou
 | `field_type` / `change_field_type` | `fieldType` | `hidden`, `invisible`, `readonly`, `password`, `enum`, `set`, `true_false`, `integer`, `date`, … |
 | `set_relation` | `setRelation` | `$where` as array preferred; raw SQL only in code |
 | `set_relation_n_n` | `setRelationNtoN` | writes via the relation name in the body |
-| — | `setRelationHasMany` | new |
+| - | `setRelationHasMany` | new |
 | `set_field_upload` | `setFieldUpload` | stored outside the web root by default; optional max size |
 | `unset_add`, `unset_edit`, `unset_delete`, `unset_read`/`unset_view`, `unset_list`, `unset_export` | same | `405` when disabled |
 | `unset_clone`, `set_clone` | same | clone is disabled by default |
@@ -85,11 +85,11 @@ Or, preferably, define it once in `app/Config/GroceryRestable.php` (`$api->resou
 | `callback_before_clone`, `callback_after_clone` | same | |
 | `callback_column` | `callbackColumn` | output transformation |
 | `callback_before_upload`, `callback_after_upload`, `callback_upload` | same | see uploads docs for arguments |
-| `callback_field`, `callback_add_field`, `callback_edit_field`, `callback_read_field` | — | form rendering is the client's job; use `_schema` metadata |
+| `callback_field`, `callback_add_field`, `callback_edit_field`, `callback_read_field` | - | form rendering is the client's job; use `_schema` metadata |
 | `add_action` | `addAction` | a real endpoint `POST /{resource}/{id}/actions/{name}` |
-| `set_theme`, `set_language`, `set_lang_string`, `unset_jquery*`, `unset_texteditor`, `set_crud_url_path` | — | HTML specific |
+| `set_theme`, `set_language`, `set_lang_string`, `unset_jquery*`, `unset_texteditor`, `set_crud_url_path` | - | HTML specific |
 | `render()` | `render($segments)` | returns a JSON response |
-| `getState()` | — | the HTTP method and path define the operation |
+| `getState()` | - | the HTTP method and path define the operation |
 
 ## Behaviour differences
 
@@ -99,5 +99,5 @@ Or, preferably, define it once in `app/Config/GroceryRestable.php` (`$api->resou
   `writable/grocery-restable/uploads` and are downloaded through `GET /{resource}/{id}/file/{field}`.
 - **Relations** are embedded on request (`select=*,offices(city)`), not flattened into a display string; the
   title template is used by `/_options/{field}` for dropdowns.
-- **Security**: nothing is public until you grant permissions or configure an authentication mode — there is no page
+- **Security**: nothing is public until you grant permissions or configure an authentication mode - there is no page
   protected by "the controller's login check" unless you add a CodeIgniter filter.

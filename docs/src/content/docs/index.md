@@ -1,9 +1,9 @@
 ---
 title: Grocery Restable
-description: Turn any MySQL / MariaDB, PostgreSQL or SQLite database into a secure REST API — configured like Grocery CRUD, managed from a phpMyAdmin-style GUI.
+description: Turn any MySQL / MariaDB, PostgreSQL or SQLite database into a secure REST API - configured like Grocery CRUD, managed from a phpMyAdmin-style GUI.
 template: splash
 hero:
-  tagline: Turn any MySQL / MariaDB, PostgreSQL or SQLite database into a secure REST API in minutes — the PostgREST / Supabase way, configured the Grocery CRUD way, managed from a phpMyAdmin-style GUI.
+  tagline: Turn any MySQL / MariaDB, PostgreSQL or SQLite database into a secure REST API in minutes - the PostgREST / Supabase way, configured the Grocery CRUD way, managed from a phpMyAdmin-style GUI.
   image:
     file: ./images/dashboard.png
     alt: The Grocery Restable admin dashboard
@@ -45,7 +45,7 @@ curl "https://example.com/api/employees?select=lastName,offices(city)&officeCode
 |---|---|
 | **Instant REST endpoints** | List, read, create (single, bulk, upsert), update, delete, clone and CSV export for every table and view. |
 | **PostgREST-style queries** | `select` with embedded relations, filters (`eq`, `gt`, `in`, `ilike`, `is`, `not.` …), `or` / `and` groups, ordering, paging and exact counts. |
-| **Relations like Grocery CRUD** | `belongs_to`, `many_to_many` (with writes) and `has_many` — in code, in the GUI, or detected from foreign keys. |
+| **Relations like Grocery CRUD** | `belongs_to`, `many_to_many` (with writes) and `has_many` - in code, in the GUI, or detected from foreign keys. |
 | **Three ways to define the API** | Fluent PHP code (Grocery CRUD compatible), the admin GUI (stored in SQLite), or automatic exposure of every table. |
 | **Uploads & storage** | Field uploads and Supabase-style storage buckets with extension allow-lists, MIME sniffing and traversal protection. |
 | **Security built in** | API keys (`anon` / `service_role`), JWT, per-role permissions, row-level security, CORS, encrypted secrets. |
@@ -54,8 +54,8 @@ curl "https://example.com/api/employees?select=lastName,offices(city)&officeCode
 
 ## Choose your setup
 
-- **[CodeIgniter 4](codeigniter4.md)** — `composer require`, and routes, services and spark commands are discovered automatically.
-- **[No framework](no-framework.md)** — a single front controller on plain PHP with PDO or MySQLi.
+- **[CodeIgniter 4](codeigniter4.md)** - `composer require`, and routes, services and spark commands are discovered automatically.
+- **[No framework](no-framework.md)** - a single front controller on plain PHP with PDO or MySQLi.
 - Then follow the **[Getting started](getting-started.md)** tutorial, or jump to the **[REST API reference](rest-api.md)**.
 
 ---

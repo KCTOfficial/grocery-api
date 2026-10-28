@@ -6,13 +6,13 @@ description: "Required and unique fields, typed input checks and CodeIgniter val
 Input is validated in this order; all problems are collected and returned together as `422 validation_failed`
 with one message per field.
 
-1. **Unknown / non-writable fields** — `Unknown field.` / `This field is not writable.`
-2. **Required fields** — `requiredFields()` on create and replace (`PUT`); on `PATCH` a required field may be
+1. **Unknown / non-writable fields** - `Unknown field.` / `This field is not writable.`
+2. **Required fields** - `requiredFields()` on create and replace (`PUT`); on `PATCH` a required field may be
    omitted but not emptied. NOT NULL columns without default are required on create automatically.
-3. **Types** — from the schema or `fieldType()`: integers, numbers, booleans, dates, times, JSON, UUIDs, ENUM values,
+3. **Types** - from the schema or `fieldType()`: integers, numbers, booleans, dates, times, JSON, UUIDs, ENUM values,
    `enum`/`set` extras, maximum string length, `NULL` on NOT NULL columns.
-4. **Rules** — `setRules()` (CodeIgniter syntax).
-5. **Unique fields** — `uniqueFields()` (only when everything else is valid).
+4. **Rules** - `setRules()` (CodeIgniter syntax).
+5. **Unique fields** - `uniqueFields()` (only when everything else is valid).
 
 Database constraints remain the last line of defence: violations become `409 constraint_violation`.
 
@@ -55,7 +55,7 @@ Implemented rules: `required`, `required_with[f]`, `required_without[f]`, `permi
 `decimal`, `is_natural`, `is_natural_no_zero`, `alpha`, `alpha_space`, `alpha_numeric`, `alpha_numeric_space`,
 `alpha_dash`, `in_list[a,b]`, `not_in_list[a,b]`, `regex_match[/…/]`, `greater_than[n]`,
 `greater_than_equal_to[n]`, `less_than[n]`, `less_than_equal_to[n]`, `matches[field]`, `differs[field]`, `string`.
-`is_unique` / `is_not_unique` are ignored here — use `uniqueFields()`.
+`is_unique` / `is_not_unique` are ignored here - use `uniqueFields()`.
 
 Custom rules:
 

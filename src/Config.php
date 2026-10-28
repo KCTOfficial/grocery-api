@@ -35,6 +35,8 @@ final class Config
         'uploadPath' => null,
         // Base directory for storage buckets. Defaults to {storagePath}/buckets
         'bucketPath' => null,
+        // Directory of the JSON logs (one file per day). Defaults to {storagePath}/logs
+        'logPath' => null,
         // URL prefix of the REST API and the admin GUI (used to build links).
         'apiUrl' => '/api',
         'adminUrl' => '/grocery-restable',
@@ -54,6 +56,8 @@ final class Config
         // Hard limits.
         'maxEmbedDepth' => 3,
         'maxBulkRows' => 1000,
+        // Largest JSON / form body accepted by NativeServer (PUT and PATCH are not limited by post_max_size).
+        'maxBodySize' => '10MB',
         // Optional logger: callable(string $level, string $message, array $context): void
         'logger' => null,
     ];
@@ -82,6 +86,7 @@ final class Config
         $this->values['configDatabase'] ??= $storage . DIRECTORY_SEPARATOR . 'grocery-restable.sqlite';
         $this->values['uploadPath'] ??= $storage . DIRECTORY_SEPARATOR . 'uploads';
         $this->values['bucketPath'] ??= $storage . DIRECTORY_SEPARATOR . 'buckets';
+        $this->values['logPath'] ??= $storage . DIRECTORY_SEPARATOR . 'logs';
         $this->values['apiUrl'] = rtrim((string) $this->values['apiUrl'], '/');
         $this->values['adminUrl'] = rtrim((string) $this->values['adminUrl'], '/');
     }
@@ -109,6 +114,11 @@ final class Config
     public function bucketPath(): string
     {
         return rtrim($this->values['bucketPath'], '/\\');
+    }
+
+    public function logPath(): string
+    {
+        return rtrim($this->values['logPath'], '/\\');
     }
 
     public function apiUrl(): string

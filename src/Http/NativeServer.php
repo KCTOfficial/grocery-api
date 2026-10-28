@@ -6,6 +6,7 @@ namespace GroceryRestable\Http;
 
 use GroceryRestable\Admin\NativeSession;
 use GroceryRestable\GroceryRestable;
+use GroceryRestable\Support\Size;
 
 /**
  * Serve Grocery Restable from a plain PHP front controller (no framework):
@@ -34,6 +35,13 @@ final class NativeServer
             return true;
         }
         if (self::isUnder($path, $apiPath)) {
+            // php.ini post_max_size does not apply to PUT / PATCH bodies, which are read into memory.
+            $maxBody = Size::toBytes((string) $api->config()->get('maxBodySize', '10MB'));
+            if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > $maxBody) {
+                Response::json(['error' => ['code' => 'payload_too_large', 'message' => 'The request body is too large.']], 413)->send();
+
+                return true;
+            }
             $api->handle(self::requestFromGlobals(substr($path, strlen($apiPath)), $api->config()->apiUrl()))->send();
 
             return true;
@@ -76,7 +84,8 @@ final class NativeServer
 
     private static function currentPath(): string
     {
-        $path = rawurldecode((string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH));
+        // Not decoded here: Request::segments() decodes each segment once (no "%252F" double decoding).
+        $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
         $script = (string) ($_SERVER['SCRIPT_NAME'] ?? '');
         // Support URLs such as /index.php/api/...
         if ($script !== '' && str_starts_with($path, $script . '/')) {

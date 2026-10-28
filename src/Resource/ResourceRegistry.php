@@ -111,6 +111,30 @@ final class ResourceRegistry
     }
 
     /**
+     * True when $table was deliberately kept out of the API: listed in auto_exclude_tables, or
+     * configured in the GUI with its resource disabled. Relations must not reach such tables.
+     */
+    public function isWithheld(string $table, ?string $connection = null): bool
+    {
+        $connection ??= $this->connections->defaultName();
+        $isDefault = $connection === $this->connections->defaultName();
+        $excluded = array_map('strtolower', (array) $this->store->setting('auto_exclude_tables', []));
+        if ($isDefault && in_array(strtolower($table), $excluded, true)) {
+            return true;
+        }
+        foreach ($this->store->resources() as $name => $row) {
+            $definition = $row['definition'];
+            $sameTable = ($definition['table'] ?? $name) === $table;
+            $sameConnection = (($definition['connection'] ?? null) ?? $this->connections->defaultName()) === $connection;
+            if (! $row['enabled'] && $sameTable && $sameConnection && ! isset($this->code[$name])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * The resource exposing $table (used for permissions and visibility of embedded rows).
      */
     public function forTable(string $table, ?string $connection = null): ?Resource

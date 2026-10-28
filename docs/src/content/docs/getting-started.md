@@ -4,9 +4,9 @@ description: "Install Grocery Restable, run the setup wizard and shape your firs
 ---
 
 This tutorial uses the MySQL **classicmodels** sample database (offices, employees, customers, orders,
-orderdetails, products, payments …) — download it from
+orderdetails, products, payments …) - download it from
 [mysqltutorial.org](https://www.mysqltutorial.org/getting-started-with-mysql/mysql-sample-database/) and import it
-into MySQL / MariaDB — and CodeIgniter 4. The same steps work without a framework, see
+into MySQL / MariaDB - and CodeIgniter 4. The same steps work without a framework, see
 [No framework](no-framework.md).
 
 ## 1. Install
@@ -45,10 +45,10 @@ php spark serve
 
 Open <http://localhost:8080/grocery-restable>. The wizard asks for:
 
-1. **Framework** — *CodeIgniter 4* (detected) or *No framework*.
-2. **Database** — use the CodeIgniter database group, or enter a connection (engine + PHP driver).
-3. **Admin account** — the login of this GUI.
-4. **API options** — authentication mode and whether to *auto expose* every table.
+1. **Framework** - *CodeIgniter 4* (detected) or *No framework*.
+2. **Database** - use the CodeIgniter database group, or enter a connection (engine + PHP driver).
+3. **Admin account** - the login of this GUI.
+4. **API options** - authentication mode and whether to *auto expose* every table.
 
 At the end two API keys are displayed **once**: an `anon` key (public) and a `service_role` key
 (full access, server side only). Store them.
@@ -73,7 +73,7 @@ curl "http://localhost:8080/api/orders?status=in.(Shipped,Resolved)&count=exact&
 ## 4. Shape a resource in code
 
 Auto expose already detected the relations from the foreign keys of classicmodels. Defining a resource in code lets
-you name relations, choose titles, add validation, uploads and permissions — like in Grocery CRUD. For the upload
+you name relations, choose titles, add validation, uploads and permissions - like in Grocery CRUD. For the upload
 example add a column first:
 
 ```sql
@@ -133,10 +133,10 @@ curl -X POST "http://localhost:8080/api/employees/1800/upload/photo" -H "apikey:
 
 ## 5. Or shape it in the GUI
 
-Select a table in the left navigation and open **API resource**: tick the columns that are listed / readable /
-writable, add labels, rules and field types, add relations with the relation editor, configure uploads,
-permissions, default conditions and order. **Save** stores the definition in SQLite and it is live immediately.
-**PHP code** shows the equivalent fluent code if you later want to move it into your application.
+Open the **API** area, pick the endpoint in the sidebar (or **New** › *Configure first* for a table that is not exposed yet)
+and work through its tabs: **Fields** (columns that are listed / readable / writable, labels, rules, field types),
+**Relations**, **Permissions**, **Uploads** and **Filters & order**. **Save** (or Ctrl+S) stores the definition in SQLite
+and it is live immediately. **PHP code** shows the equivalent fluent code if you later want to move it into your application.
 
 ![Resource editor](images/resource-editor.png)
 

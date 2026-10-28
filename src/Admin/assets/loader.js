@@ -1,9 +1,9 @@
 /*!
- * Grocery Restable admin — asset loader.
+ * Grocery Restable admin - asset loader.
  *
  * The libraries are loaded from the jsDelivr CDN first (see views/head.php and views/foot.php).
  * When the CDN is unreachable (offline / blocked), this file loads the identical local copies
- * from assets/vendor, then starts the admin application. It must stay an external file:
+ * from assets/vendor, then loads the admin application modules (assets/app) and admin.js. It must stay an external file:
  * the Content-Security-Policy forbids inline scripts.
  */
 (function () {
@@ -13,6 +13,14 @@
     var base = current.src.replace(/loader\.js(\?.*)?$/, '');
     var version = (current.src.match(/\?v=([A-Za-z0-9]+)/) || [])[1];
     var startApp = current.getAttribute('data-app') === '1';
+
+    // Admin application modules, in dependency order (admin.js is the entry point).
+    var APP_SCRIPTS = [
+        'app/core.js', 'app/router.js', 'app/components.js', 'app/snippets.js', 'app/shell.js',
+        'app/pages/setup.js', 'app/pages/home.js', 'app/pages/data.js', 'app/pages/api.js',
+        'app/pages/resource.js', 'app/pages/storage.js', 'app/pages/logs.js', 'app/pages/settings.js',
+        'admin.js',
+    ];
 
     function addStyle(path) {
         var link = document.createElement('link');
@@ -45,7 +53,7 @@
     if (!window.jQuery) queue.push('vendor/jquery/jquery.min.js');
     if (!window.bootstrap) queue.push('vendor/bootstrap/bootstrap.bundle.min.js');
     if (!window.hljs) queue.push('vendor/highlightjs/highlight.min.js');
-    queue.push('admin.js' + (version ? '?v=' + version : ''));
+    APP_SCRIPTS.forEach(function (path) { queue.push(path + (version ? '?v=' + version : '')); });
 
     queue.forEach(function (path) {
         var script = document.createElement('script');

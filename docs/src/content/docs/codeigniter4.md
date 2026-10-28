@@ -160,7 +160,7 @@ exact CodeIgniter connection (same credentials, same driver). Supported CodeIgni
 [Database connections](database-connections.md).
 
 The default connection (used by auto expose and by resources without `setConnection()`) is chosen in the
-setup wizard and can be changed on the **Connections** page.
+setup wizard and can be changed in **Settings › Database connections**.
 
 > Table names are used as-is: CodeIgniter's `DBPrefix` is not applied automatically. Use the full table name
 > (e.g. `setTable('app_users')`).
@@ -168,7 +168,7 @@ setup wizard and can be changed on the **Connections** page.
 ## Validation
 
 With `useCodeIgniterValidation = true`, `setRules()` strings are validated by `service('validation')`, so every
-CodeIgniter rule works — including `is_unique[users.email,id,{id}]` and your own rule classes registered in
+CodeIgniter rule works - including `is_unique[users.email,id,{id}]` and your own rule classes registered in
 `Config\Validation::$ruleSets`. See [Validation](validation.md).
 
 ## Session
@@ -185,6 +185,7 @@ as usual (`app/Config/Session.php`).
 | `php spark grocery-restable:admin <username> [--password …] [--reset]` | Create an admin user or reset its password. |
 | `php spark grocery-restable:key <name> [role]` | Create an API key (printed once). |
 | `php spark grocery-restable:cache` | Clear the schema cache (normally not needed: structure changes are detected automatically). |
+| `php spark grocery-restable:cleanup [--run] [--tasks=…] [--min-age=24]` | Report (dry run) or clean orphan upload files, orphan bucket folders, stale metadata, interrupted uploads, empty folders and the trash. See [Orphan files and cleanup](uploads-and-storage.md#orphan-files-and-cleanup). |
 
 ## Using the engine in your own code
 
@@ -221,5 +222,5 @@ RewriteRule ^ index.php [L,QSA]
 3. `CI_ENVIRONMENT = production` (no debug details in API errors).
 4. Disable the GUI on public API servers (`groceryrestable.adminEnabled = false`) or protect it with an
    `adminFilters` IP allow-list.
-5. Restrict CORS origins in **Settings**.
+5. Restrict CORS origins in **Settings › CORS**.
 6. Structure changes after migrations are detected automatically; `php spark grocery-restable:cache` forces a refresh.

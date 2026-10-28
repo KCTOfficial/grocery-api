@@ -46,12 +46,19 @@ final class View
     }
 
     /**
-     * Cache busting token for admin.js / admin.css / loader.js (changes when one of them changes).
+     * Cache busting token for admin.js / admin.css / loader.js and the modules in assets/app
+     * (changes when one of them changes).
      */
     public static function assetVersion(): string
     {
+        $files = ['admin.js', 'admin.css', 'loader.js'];
+        foreach (['app/*.js', 'app/pages/*.js'] as $pattern) {
+            foreach (glob(__DIR__ . '/assets/' . $pattern) ?: [] as $path) {
+                $files[] = substr($path, strlen(__DIR__ . '/assets/'));
+            }
+        }
         $stamp = '';
-        foreach (['admin.js', 'admin.css', 'loader.js'] as $file) {
+        foreach ($files as $file) {
             $stamp .= (string) @filemtime(__DIR__ . '/assets/' . $file);
         }
 

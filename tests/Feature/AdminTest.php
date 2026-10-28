@@ -233,11 +233,74 @@ final class AdminTest extends TestCase
         self::assertArrayNotHasKey('jwt_secret', $export['data']['settings']);
     }
 
+    public function testAccountUsersAndLogs(): void
+    {
+        $this->runSetup();
+        $this->login();
+
+        // My account: the current password is required.
+        self::assertSame(422, $this->xhr('account.update', ['current_password' => 'wrong', 'username' => 'boss'])[0]);
+        self::assertSame(422, $this->xhr('account.update', ['current_password' => 'Secret123!', 'password' => 'NewSecret1!', 'password_confirm' => 'typo'])[0]);
+        [$status, $account] = $this->xhr('account.update', ['current_password' => 'Secret123!', 'username' => 'boss', 'password' => 'NewSecret1!', 'password_confirm' => 'NewSecret1!']);
+        self::assertSame([200, 'boss'], [$status, $account['data']['username']]);
+        self::assertNotNull($this->api->store()->verifyUser('boss', 'NewSecret1!'));
+
+        // Other admins: rename / reset password, but not yourself through this action.
+        [, $created] = $this->xhr('user.create', ['username' => 'second', 'password' => 'Secret123!']);
+        self::assertSame(200, $this->xhr('user.update', ['id' => $created['data']['id'], 'username' => 'third', 'password' => 'Another12!'])[0]);
+        self::assertNotNull($this->api->store()->verifyUser('third', 'Another12!'));
+        self::assertSame(400, $this->xhr('user.update', ['id' => $this->api->store()->verifyUser('boss', 'NewSecret1!')['id'], 'password' => 'x12345678'])[0]);
+        self::assertSame(422, $this->xhr('user.update', ['id' => $created['data']['id'], 'username' => 'boss'])[0], 'usernames are unique');
+
+        // Admin actions are logged; secrets are not.
+        $day = date('Y-m-d');
+        [, $logs] = $this->xhr('logs.read', ['day' => $day, 'filters' => ['type' => 'admin']]);
+        $actions = array_column($logs['data']['entries'], 'action');
+        self::assertContains('login', $actions);
+        self::assertContains('account.update', $actions);
+        self::assertStringNotContainsString('NewSecret1!', (string) file_get_contents($this->api->logs()->path($day)));
+        self::assertSame($day, $this->xhr('logs.days')[1]['data'][0]['day']);
+        self::assertSame(200, $this->request('GET', 'log?day=' . $day)->getStatus());
+        self::assertSame(400, $this->request('GET', 'log?day=../x')->getStatus());
+        self::assertSame(1, $this->xhr('logs.delete', ['day' => $day])[1]['data']['deleted']);
+    }
+
+    public function testStorageCleanupActions(): void
+    {
+        $this->runSetup();
+        $this->login();
+
+        self::assertSame(200, $this->xhr('bucket.save', ['name' => 'old', 'definition' => ['allowedTypes' => 'txt']])[0]);
+        $dir = $this->dir . '/storage/buckets/old/a';
+        mkdir($dir, 0777, true);
+        file_put_contents($dir . '/file.txt', 'x');
+
+        [, $list] = $this->xhr('bucket.objects', ['bucket' => 'old', 'delimiter' => '']);
+        self::assertSame(['a/file.txt'], array_column($list['data']['files'], 'path'));
+        self::assertSame('a/file.txt', $this->xhr('bucket.object.info', ['bucket' => 'old', 'path' => 'a/file.txt'])[1]['data']['path']);
+
+        // Deleting the bucket without purge leaves an orphan folder, which the scan reports.
+        $this->xhr('bucket.delete', ['name' => 'old']);
+        [, $scan] = $this->xhr('storage.scan');
+        self::assertSame('old', $scan['data']['tasks']['orphan_buckets']['items'][0]['bucket']);
+        [, $clean] = $this->xhr('storage.clean', ['tasks' => ['orphan_buckets', 'unknown']]);
+        self::assertSame(['orphan_buckets' => 1], $clean['data']);
+        self::assertDirectoryDoesNotExist($this->dir . '/storage/buckets/old');
+
+        // With purge the files go straight to the trash.
+        $this->xhr('bucket.save', ['name' => 'tmp', 'definition' => []]);
+        file_put_contents($this->dir . '/storage/buckets/tmp/f.txt', 'x');
+        self::assertTrue($this->xhr('bucket.delete', ['name' => 'tmp', 'purge' => true])[1]['data']['trashed']);
+        self::assertDirectoryExists($this->dir . '/storage/trash/' . date('Y-m-d') . '/buckets/tmp');
+    }
+
     public function testStaticAssetsAndOfflineVendorCopies(): void
     {
         $ok = [
             'assets/admin.js' => 'application/javascript',
             'assets/loader.js' => 'application/javascript',
+            'assets/app/core.js' => 'application/javascript',
+            'assets/app/pages/resource.js' => 'application/javascript',
             'assets/favicon.svg' => 'image/svg+xml',
             'assets/vendor/jquery/jquery.min.js' => 'application/javascript',
             'assets/vendor/bootstrap/bootstrap.min.css' => 'text/css',

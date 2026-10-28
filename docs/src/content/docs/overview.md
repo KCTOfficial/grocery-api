@@ -7,9 +7,9 @@ description: "What Grocery Restable is, how it works, and the vocabulary used th
 
 Grocery Restable exposes the tables of a relational database as a REST API and gives you three ways to shape it:
 
-1. **Code** — a fluent, Grocery CRUD compatible PHP API (`setRelation()`, `requiredFields()`, callbacks …).
-2. **GUI** — a phpMyAdmin-style admin interface; definitions are stored in SQLite.
-3. **Auto** — every table is exposed automatically, relations are detected from foreign keys.
+1. **Code** - a fluent, Grocery CRUD compatible PHP API (`setRelation()`, `requiredFields()`, callbacks …).
+2. **GUI** - a phpMyAdmin-style admin interface; definitions are stored in SQLite.
+3. **Auto** - every table is exposed automatically, relations are detected from foreign keys.
 
 When the same resource exists in more than one place, **code wins over GUI, and GUI wins over auto**.
 

@@ -34,8 +34,15 @@ final class Jwt
      *
      * @return array<string, mixed>
      */
-    public static function decode(string $token, string $secret, int $leeway = 60, ?string $audience = null, ?string $issuer = null): array
-    {
+    public static function decode(
+        string $token,
+        string $secret,
+        int $leeway = 60,
+        ?string $audience = null,
+        ?string $issuer = null,
+        ?string $algorithm = null,
+        bool $requireExpiry = false,
+    ): array {
         $parts = explode('.', $token);
         if (count($parts) !== 3) {
             throw ApiException::unauthorized('Malformed token.');
@@ -51,7 +58,7 @@ final class Jwt
 
         $alg = $header['alg'] ?? '';
         // Only HMAC algorithms are accepted; "none" and asymmetric algorithms are rejected.
-        if (! is_string($alg) || ! isset(self::ALGORITHMS[$alg])) {
+        if (! is_string($alg) || ! isset(self::ALGORITHMS[$alg]) || ($algorithm !== null && $alg !== $algorithm)) {
             throw ApiException::unauthorized('Unsupported token algorithm.');
         }
 
@@ -61,10 +68,18 @@ final class Jwt
         }
 
         $now = time();
-        if (isset($claims['exp']) && is_numeric($claims['exp']) && $now - $leeway >= (int) $claims['exp']) {
+        foreach (['exp', 'nbf', 'iat'] as $timeClaim) {
+            if (isset($claims[$timeClaim]) && ! is_int($claims[$timeClaim]) && ! is_float($claims[$timeClaim])) {
+                throw ApiException::unauthorized('Invalid "' . $timeClaim . '" claim.');
+            }
+        }
+        if ($requireExpiry && ! isset($claims['exp'])) {
+            throw ApiException::unauthorized('The token has no expiry ("exp" claim).');
+        }
+        if (isset($claims['exp']) && $now - $leeway >= (int) $claims['exp']) {
             throw ApiException::unauthorized('Token has expired.');
         }
-        if (isset($claims['nbf']) && is_numeric($claims['nbf']) && $now + $leeway < (int) $claims['nbf']) {
+        if (isset($claims['nbf']) && $now + $leeway < (int) $claims['nbf']) {
             throw ApiException::unauthorized('Token is not valid yet.');
         }
         if ($audience !== null && $audience !== '') {

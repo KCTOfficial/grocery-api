@@ -15,7 +15,7 @@ use PDO;
  */
 final class ConfigStore
 {
-    private const SCHEMA_VERSION = 1;
+    private const SCHEMA_VERSION = 3;
 
     /**
      * Runtime settings and their defaults.
@@ -42,6 +42,10 @@ final class ConfigStore
         'jwt_default_role' => 'authenticated',
         'jwt_audience' => '',
         'jwt_issuer' => '',
+        // Reject tokens without "exp" (they would never expire).
+        'jwt_require_exp' => true,
+        // service_role bypasses every permission; by default only its API key grants it.
+        'jwt_allow_service_role' => false,
         // Accept ?apikey=... (handy for <img src>, but keys end up in access logs).
         'allow_query_apikey' => false,
         'cors_enabled' => true,
@@ -56,6 +60,24 @@ final class ConfigStore
         'upload_max_size' => '20MB',
         'delete_replaced_files' => true,
         'expose_openapi' => true,
+        // Rate limiting of the REST API (fixed window, per client).
+        'rate_limit_enabled' => true,
+        'rate_limit_requests' => 600,
+        'rate_limit_window' => 60,
+        // Anonymous callers (role anon); 0 = same limit as everybody.
+        'rate_limit_anon_requests' => 120,
+        'rate_limit_exempt_service' => true,
+        // JSON logs in {logPath}/YYYY-MM-DD.jsonl. log_requests: all | errors | none.
+        'log_requests' => 'all',
+        'log_admin' => true,
+        'log_retention_days' => 14,
+        // Storage housekeeping: once a day remove temporary files, empty folders, stale index rows
+        // and expired trash, and index files copied into buckets by hand. Orphans are never removed automatically.
+        'storage_auto_cleanup' => true,
+        // Files younger than this are never treated as orphans (uploads still in progress).
+        'orphan_min_age_hours' => 24,
+        // Cleaned files are moved to {storagePath}/trash and deleted after this many days (0 = delete immediately).
+        'storage_trash_days' => 7,
     ];
 
     /**
@@ -359,9 +381,7 @@ final class ConfigStore
     public function createUser(string $username, string $password): int
     {
         $username = trim($username);
-        if (! preg_match('/^[A-Za-z0-9._@-]{3,64}$/', $username)) {
-            throw new ConfigurationException('Usernames must be 3-64 characters (letters, digits, . _ @ -).');
-        }
+        self::assertUsername($username);
         self::assertPassword($password);
 
         $this->pdo()->prepare('INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)')
@@ -409,6 +429,30 @@ final class ConfigStore
         $this->pdo()->prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?')->execute([password_hash($password, PASSWORD_DEFAULT), $id]);
     }
 
+    public function changeUsername(int $id, string $username): void
+    {
+        $username = trim($username);
+        self::assertUsername($username);
+        $statement = $this->pdo()->prepare('SELECT COUNT(*) FROM admin_users WHERE username = ? AND id <> ?');
+        $statement->execute([$username, $id]);
+        if ((int) $statement->fetchColumn() > 0) {
+            throw new ConfigurationException('The username "' . $username . '" is already taken.');
+        }
+        $this->pdo()->prepare('UPDATE admin_users SET username = ? WHERE id = ?')->execute([$username, $id]);
+    }
+
+    /**
+     * Check the password of an admin user (without touching last_login_at).
+     */
+    public function checkPassword(int $id, string $password): bool
+    {
+        $statement = $this->pdo()->prepare('SELECT password_hash FROM admin_users WHERE id = ?');
+        $statement->execute([$id]);
+        $hash = $statement->fetchColumn();
+
+        return is_string($hash) && password_verify($password, $hash);
+    }
+
     public function deleteUser(int $id): void
     {
         if ($this->countUsers() <= 1) {
@@ -439,6 +483,138 @@ final class ConfigStore
     public function clearFailedLogins(string $ip): void
     {
         $this->pdo()->prepare('DELETE FROM login_attempts WHERE ip = ?')->execute([$ip]);
+    }
+
+    // ------------------------------------------------------------------
+    // Storage object index (S3 style metadata of bucket files)
+    // ------------------------------------------------------------------
+
+    /**
+     * Insert or replace the metadata of an object (created_at is kept on replace).
+     *
+     * @param array{size: int, etag: string, content_type: string, original_name?: string|null, cache_control?: string|null,
+     *              metadata?: array<string, string>|null, owner?: string|null, created_at?: string, updated_at?: string} $object
+     */
+    public function putObject(string $bucket, string $path, array $object): void
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $this->pdo()->prepare(
+            'INSERT INTO storage_objects (bucket, path, size, etag, content_type, original_name, cache_control, metadata, owner, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(bucket, path) DO UPDATE SET size = excluded.size, etag = excluded.etag, content_type = excluded.content_type,
+                original_name = excluded.original_name, cache_control = excluded.cache_control, metadata = excluded.metadata,
+                owner = excluded.owner, updated_at = excluded.updated_at',
+        )->execute([
+            $bucket, $path, $object['size'], $object['etag'], $object['content_type'], $object['original_name'] ?? null,
+            $object['cache_control'] ?? null, isset($object['metadata']) && $object['metadata'] !== [] ? json_encode($object['metadata'], JSON_UNESCAPED_UNICODE) : null,
+            $object['owner'] ?? null, $object['created_at'] ?? $now, $object['updated_at'] ?? $now,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function object(string $bucket, string $path): ?array
+    {
+        $statement = $this->pdo()->prepare('SELECT * FROM storage_objects WHERE bucket = ? AND path = ?');
+        $statement->execute([$bucket, $path]);
+        $row = $statement->fetch();
+
+        return $row ? self::objectRow($row) : null;
+    }
+
+    public function deleteObject(string $bucket, string $path): void
+    {
+        $this->pdo()->prepare('DELETE FROM storage_objects WHERE bucket = ? AND path = ?')->execute([$bucket, $path]);
+    }
+
+    /**
+     * Objects of a bucket in key order (binary, like S3), with a key prefix, after a key.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function objects(string $bucket, string $prefix = '', string $after = '', int $limit = 1000): array
+    {
+        $sql = 'SELECT * FROM storage_objects WHERE bucket = ? AND path > ?';
+        $bindings = [$bucket, $after];
+        if ($prefix !== '') {
+            // A range instead of LIKE: no escaping of % and _, and the primary key index is used.
+            $sql .= ' AND path >= ? AND path < ?';
+            array_push($bindings, $prefix, $prefix . "\u{10FFFF}");
+        }
+        $statement = $this->pdo()->prepare($sql . ' ORDER BY path LIMIT ' . max(1, $limit));
+        $statement->execute($bindings);
+
+        return array_map([self::class, 'objectRow'], $statement->fetchAll());
+    }
+
+    public function countObjects(string $bucket): int
+    {
+        $statement = $this->pdo()->prepare('SELECT COUNT(*) FROM storage_objects WHERE bucket = ?');
+        $statement->execute([$bucket]);
+
+        return (int) $statement->fetchColumn();
+    }
+
+    /**
+     * @return list<string> Buckets that have index rows.
+     */
+    public function indexedBuckets(): array
+    {
+        return $this->pdo()->query('SELECT DISTINCT bucket FROM storage_objects ORDER BY bucket')->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    public function deleteBucketObjects(string $bucket): int
+    {
+        $statement = $this->pdo()->prepare('DELETE FROM storage_objects WHERE bucket = ?');
+        $statement->execute([$bucket]);
+
+        return $statement->rowCount();
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private static function objectRow(array $row): array
+    {
+        $row['size'] = (int) $row['size'];
+        $row['metadata'] = $row['metadata'] !== null ? (json_decode((string) $row['metadata'], true) ?: []) : [];
+
+        return $row;
+    }
+
+    // ------------------------------------------------------------------
+    // API rate limiting (fallback when APCu is not available)
+    // ------------------------------------------------------------------
+
+    /**
+     * Count a hit for $key in the window starting at $windowStart; returns the hits of that window.
+     */
+    public function hitRateLimit(string $key, int $windowStart): int
+    {
+        $pdo = $this->pdo();
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare(
+                'INSERT INTO rate_limits (key, window_start, hits) VALUES (?, ?, 1)
+                 ON CONFLICT(key) DO UPDATE SET
+                    hits = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.hits + 1 ELSE 1 END,
+                    window_start = excluded.window_start',
+            )->execute([$key, $windowStart]);
+            $statement = $pdo->prepare('SELECT hits FROM rate_limits WHERE key = ?');
+            $statement->execute([$key]);
+            $hits = (int) $statement->fetchColumn();
+            if (random_int(1, 200) === 1) {
+                $pdo->prepare('DELETE FROM rate_limits WHERE window_start < ?')->execute([time() - 86400]);
+            }
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        return $hits;
     }
 
     // ------------------------------------------------------------------
@@ -530,6 +706,12 @@ final class ConfigStore
             CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, username TEXT, attempted_at INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS login_attempts_ip ON login_attempts (ip, attempted_at);
             CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, window_start INTEGER NOT NULL, hits INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS storage_objects (
+                bucket TEXT NOT NULL, path TEXT NOT NULL, size INTEGER NOT NULL, etag TEXT NOT NULL, content_type TEXT NOT NULL,
+                original_name TEXT, cache_control TEXT, metadata TEXT, owner TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY (bucket, path)
+            );
             SQL);
         $this->pdo->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
     }
@@ -545,6 +727,13 @@ final class ConfigStore
     {
         if (! preg_match('/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/', $role)) {
             throw new ConfigurationException('Invalid role name "' . $role . '".');
+        }
+    }
+
+    private static function assertUsername(string $username): void
+    {
+        if (! preg_match('/^[A-Za-z0-9._@-]{3,64}$/', $username)) {
+            throw new ConfigurationException('Usernames must be 3-64 characters (letters, digits, . _ @ -).');
         }
     }
 

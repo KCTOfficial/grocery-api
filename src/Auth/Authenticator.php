@@ -112,12 +112,18 @@ final class Authenticator
             60,
             (string) $this->store->setting('jwt_audience', '') ?: null,
             (string) $this->store->setting('jwt_issuer', '') ?: null,
+            (string) $this->store->setting('jwt_algorithm', 'HS256'),
+            (bool) $this->store->setting('jwt_require_exp', true),
         );
 
         $roleClaim = (string) $this->store->setting('jwt_role_claim', 'role');
         $role = self::claimPath($claims, $roleClaim) ?? $this->store->setting('jwt_default_role', 'authenticated');
         if (! is_string($role) || ! preg_match('/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/', $role)) {
             throw ApiException::unauthorized('Invalid role claim in token.');
+        }
+        // service_role bypasses every permission: only its API key grants it, unless explicitly allowed.
+        if ($role === AuthContext::SERVICE_ROLE && ! $this->store->setting('jwt_allow_service_role', false)) {
+            throw ApiException::unauthorized('Tokens cannot grant the service_role role.');
         }
 
         return new AuthContext($role, 'jwt', $claims);

@@ -21,7 +21,7 @@ export default defineConfig({
 		starlight({
 			title: 'Grocery Restable',
 			description:
-				'Turn any MySQL / MariaDB, PostgreSQL or SQLite database into a secure REST API — configured like Grocery CRUD, managed from a phpMyAdmin-style GUI.',
+				'Turn any MySQL / MariaDB, PostgreSQL or SQLite database into a secure REST API - configured like Grocery CRUD, managed from a phpMyAdmin-style GUI.',
 			logo: { src: './src/assets/logo.svg' },
 			favicon: '/favicon.svg',
 			social: [{ icon: 'github', label: 'GitHub', href: repository }],
@@ -40,11 +40,11 @@ export default defineConfig({
 				},
 				{
 					label: 'Consuming the API',
-					items: ['rest-api', 'openapi'],
+					items: ['javascript-sdk', 'rest-api', 'openapi'],
 				},
 				{
 					label: 'Operating',
-					items: ['security', 'architecture', 'migrating-from-grocery-crud', 'troubleshooting'],
+					items: ['security', 'rate-limiting', 'logging', 'architecture', 'migrating-from-grocery-crud', 'troubleshooting'],
 				},
 			],
 		}),

@@ -19,6 +19,30 @@ use GroceryRestable\Exception\ApiException;
  */
 final class QueryParser
 {
+    /** Deepest parenthesis nesting accepted in select / and / or (parsing cost grows with it). */
+    public const MAX_NESTING = 10;
+    public const MAX_QUERY_LENGTH = 16384;
+
+    /**
+     * Reject deeply nested expressions before parsing them recursively (denial of service).
+     */
+    private static function assertNesting(string $value, string $what): void
+    {
+        $depth = 0;
+        $max = 0;
+        $length = strlen($value);
+        for ($i = 0; $i < $length; $i++) {
+            if ($value[$i] === '(') {
+                $max = max($max, ++$depth);
+                if ($max > self::MAX_NESTING) {
+                    throw ApiException::badRequest(sprintf('"%s" is nested too deeply (max %d levels).', $what, self::MAX_NESTING));
+                }
+            } elseif ($value[$i] === ')') {
+                $depth--;
+            }
+        }
+    }
+
     public const RESERVED = ['_', 'select', 'order', 'limit', 'offset', 'page', 'per_page', 'q', 'count', 'format', 'apikey', 'columns', 'on_conflict', '_method'];
 
     /**
@@ -29,6 +53,9 @@ final class QueryParser
      */
     public static function pairs(string $queryString): array
     {
+        if (strlen($queryString) > self::MAX_QUERY_LENGTH) {
+            throw new ApiException('The query string is too long (max ' . self::MAX_QUERY_LENGTH . ' bytes).', 414, 'query_too_long');
+        }
         $pairs = [];
         foreach (explode('&', ltrim($queryString, '?')) as $part) {
             if ($part === '') {
@@ -133,6 +160,7 @@ final class QueryParser
 
     public function parseSelect(string $value): SelectNode
     {
+        self::assertNesting($value, 'select');
         $node = new SelectNode();
         $value = trim($value);
         if ($value === '' || $value === '*') {
@@ -152,7 +180,7 @@ final class QueryParser
             }
 
             $alias = null;
-            // "alias:column" / "alias:relation(...)" — the colon must come before any parenthesis.
+            // "alias:column" / "alias:relation(...)" - the colon must come before any parenthesis.
             $colon = strpos($item, ':');
             $paren = strpos($item, '(');
             if ($colon !== false && ($paren === false || $colon < $paren)) {
@@ -234,6 +262,7 @@ final class QueryParser
 
     public function parseLogic(string $boolean, string $value, bool $negated = false): FilterGroup
     {
+        self::assertNesting($value, $boolean);
         $value = trim($value);
         if (! str_starts_with($value, '(') || ! str_ends_with($value, ')')) {
             throw ApiException::badRequest('Logical operators expect a parenthesized list, e.g. or=(a.eq.1,b.eq.2).');

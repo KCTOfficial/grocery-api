@@ -4,7 +4,7 @@
 #   3. deploy   publishes the website to GitHub Pages
 #   4. release  creates the GitHub Release for the tag, with notes from CHANGELOG.md
 #
-#   git tag v1.0.0 && git push origin v1.0.0
+#   git tag v1.1.0 && git push origin v1.1.0
 #
 # Running the workflow manually (Actions → Release → Run workflow) on a branch tests and redeploys the
 # documentation without creating a release.
@@ -66,6 +66,10 @@ jobs:
 
       - name: Run tests
         run: composer test
+
+      - name: Run the JavaScript SDK tests
+        working-directory: sdk/js
+        run: node --test
 
   docs:
     name: Build documentation

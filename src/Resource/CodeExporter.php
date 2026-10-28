@@ -97,6 +97,12 @@ final class CodeExporter
         if ($d['maxLimit'] !== null) {
             $call('setMaxLimit', $d['maxLimit']);
         }
+        if ($d['idGenerator'] !== null) {
+            $call('setIdGenerator', $d['idGenerator']);
+        }
+        if ($d['rateLimit'] !== null) {
+            $call('setRateLimit', $d['rateLimit']['requests'], $d['rateLimit']['window']);
+        }
         if ($d['permissions'] !== null) {
             $call('setPermissions', $d['permissions']);
         }

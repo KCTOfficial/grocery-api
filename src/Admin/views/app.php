@@ -8,30 +8,25 @@ include __DIR__ . '/head.php';
 ?>
 <body class="gr-body" data-page="app" data-gr="<?= $e(json_encode($bootstrap, JSON_UNESCAPED_SLASHES)) ?>">
 <div class="gr-layout">
+    <?php /* Section rail: Data (browse tables) · API (endpoint configuration) · Storage · Settings (advanced). */ ?>
+    <nav class="gr-rail" aria-label="Sections">
+        <a class="gr-rail-logo" href="#/home" title="<?= $e($title) ?>"><i class="fa-solid fa-basket-shopping"></i></a>
+        <a href="#/home" data-section="home" title="Overview and getting started"><i class="fa-solid fa-gauge"></i><span>Overview</span></a>
+        <a href="#/data" data-section="data" title="Data: browse and edit tables"><i class="fa-solid fa-table"></i><span>Data</span></a>
+        <a href="#/api" data-section="api" title="API: endpoints, permissions, keys, docs and console"><i class="fa-solid fa-plug"></i><span>API</span></a>
+        <a href="#/storage" data-section="storage" title="Storage buckets and files"><i class="fa-solid fa-box-archive"></i><span>Storage</span></a>
+        <a href="#/logs" data-section="logs" title="Logs: API requests and admin actions"><i class="fa-solid fa-list-ul"></i><span>Logs</span></a>
+        <a href="#/settings" data-section="settings" title="Settings: authentication, rate limiting, CORS, uploads, logging, connections, admins"><i class="fa-solid fa-gear"></i><span>Settings</span></a>
+        <div class="gr-rail-bottom">
+            <a href="#/settings/account" title="My account (<?= $e($bootstrap['user']) ?>): username and password"><i class="fa-solid fa-circle-user"></i><span>Account</span></a>
+            <a href="#" data-action="logout" title="Log out (<?= $e($bootstrap['user']) ?>)"><i class="fa-solid fa-right-from-bracket"></i><span>Log out</span></a>
+        </div>
+    </nav>
+
     <aside class="gr-nav" id="gr-nav">
-        <a class="gr-logo" href="#/home" title="Home">
-            <i class="fa-solid fa-basket-shopping"></i>
-            <span>Grocery<strong>Restable</strong></span>
-        </a>
-        <div class="gr-nav-icons">
-            <a href="#/home" title="Home"><i class="fa-solid fa-house"></i></a>
-            <a href="#" data-action="reload-tree" title="Refresh schema (detect new tables and columns)"><i class="fa-solid fa-rotate"></i></a>
-            <a href="#/docs" title="API documentation"><i class="fa-solid fa-book"></i></a>
-            <a href="#/console" title="API console"><i class="fa-solid fa-terminal"></i></a>
-            <a href="#/settings" title="Settings"><i class="fa-solid fa-gear"></i></a>
-            <a href="#" data-action="logout" title="Log out"><i class="fa-solid fa-right-from-bracket"></i></a>
-        </div>
-        <div class="gr-nav-filter">
-            <i class="fa-solid fa-filter"></i>
-            <input type="search" id="gr-tree-filter" class="form-control form-control-sm" placeholder="Filter tables" aria-label="Filter tables">
-        </div>
-        <div class="gr-tree" id="gr-tree"></div>
-        <div class="gr-nav-legend small">
-            <span class="gr-dot gr-dot-code"></span> code
-            <span class="gr-dot gr-dot-gui"></span> GUI
-            <span class="gr-dot gr-dot-auto"></span> auto
-            <span class="gr-dot gr-dot-none"></span> not exposed
-        </div>
+        <div class="gr-nav-head" id="gr-nav-head"></div>
+        <div class="gr-nav-body" id="gr-nav-body"></div>
+        <div class="gr-nav-foot" id="gr-nav-foot"></div>
     </aside>
 
     <main class="gr-main">
@@ -51,10 +46,18 @@ include __DIR__ . '/head.php';
                 <h5 class="modal-title fs-6"></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body"></div>
+            <div class="modal-body gr-overlay-body"></div>
             <div class="modal-footer py-2"></div>
         </div>
     </div>
+</div>
+<div class="offcanvas offcanvas-end gr-drawer" tabindex="-1" id="gr-drawer" aria-labelledby="gr-drawer-title">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title fs-6" id="gr-drawer-title"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body gr-overlay-body"></div>
+    <div class="gr-drawer-footer"></div>
 </div>
 <div class="toast-container position-fixed bottom-0 end-0 p-3" id="gr-toasts"></div>
 <form method="post" action="<?= $e($bootstrap['adminUrl']) ?>/logout" id="gr-logout-form" class="d-none">

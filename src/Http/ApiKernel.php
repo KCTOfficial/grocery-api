@@ -10,11 +10,14 @@ use GroceryRestable\Exception\ConfigurationException;
 use GroceryRestable\Exception\DatabaseException;
 use GroceryRestable\Exception\ValidationException;
 use GroceryRestable\GroceryRestable;
+use GroceryRestable\Logging\LogStore;
 use GroceryRestable\Query\QueryParser;
 use GroceryRestable\Query\SelectNode;
 use GroceryRestable\Resource\ResolvedResource;
 use GroceryRestable\Resource\Resource;
+use GroceryRestable\Resource\ResourceRegistry;
 use GroceryRestable\Service\ActionContext;
+use GroceryRestable\Service\StorageService;
 use PDOException;
 use Throwable;
 
@@ -23,6 +26,7 @@ use Throwable;
  *
  *   GET    /                          index of resources
  *   GET    /openapi.json              OpenAPI 3.1 document
+ *   GET    /sdk.js                    JavaScript SDK (ES module)
  *   GET    /_schema[/{resource}]      field metadata (labels, types, relations) for UI builders
  *   GET    /{resource}                list (filters, select, order, paging, count, csv)
  *   POST   /{resource}                create one / many, upsert
@@ -43,6 +47,8 @@ use Throwable;
  */
 final class ApiKernel
 {
+    private const SDK_FILE = __DIR__ . '/../../sdk/js/src/grocery-restable.js';
+
     private const SECURITY_HEADERS = [
         'X-Content-Type-Options' => 'nosniff',
         'Referrer-Policy' => 'no-referrer',
@@ -51,6 +57,12 @@ final class ApiKernel
 
     /** True while handling a request for a single mounted resource (Grocery CRUD style). */
     private bool $mounted = false;
+
+    /** @var array<string, string> Rate limit headers of the current request. */
+    private array $limitHeaders = [];
+
+    /** @var array<string, string>|null Error of the current request, for the log. */
+    private ?array $lastError = null;
 
     public function __construct(private readonly GroceryRestable $api)
     {
@@ -63,6 +75,7 @@ final class ApiKernel
      */
     public function handle(Request $request, ?Resource $resource = null, ?AuthContext $auth = null): Response
     {
+        $started = hrtime(true);
         $cors = $this->corsHeaders($request);
 
         if ($request->method() === 'OPTIONS') {
@@ -70,8 +83,16 @@ final class ApiKernel
         }
 
         $this->mounted = $resource !== null;
+        $this->limitHeaders = [];
+        $this->lastError = null;
+        $internal = $auth !== null; // admin console and tests act as a given caller
+        $target = null;
         try {
-            $auth ??= $this->api->authenticator()->authenticate($request);
+            $auth ??= $this->authenticate($request);
+            $target = $resource ?? $this->targetResource($request);
+            if (! $internal) {
+                $this->rateLimit($request, $auth, $target);
+            }
             $response = $resource !== null
                 ? $this->resourceRoute($resource, $request->segments(), $request, $auth)
                 : $this->route($request, $auth);
@@ -84,8 +105,79 @@ final class ApiKernel
                 $response = $response->withHeader($name, $value);
             }
         }
+        $response = $response->withHeaders($cors + $this->limitHeaders);
+        $this->logRequest($request, $response, $auth, $target, $started, $internal);
 
-        return $response->withHeaders($cors);
+        return $response;
+    }
+
+    /**
+     * Failed authentications also count against the rate limit of the client IP (key / token guessing).
+     */
+    private function authenticate(Request $request): AuthContext
+    {
+        try {
+            return $this->api->authenticator()->authenticate($request);
+        } catch (ApiException $e) {
+            $this->rateLimit($request, AuthContext::anonymous(), null);
+            throw $e;
+        }
+    }
+
+    /**
+     * The resource addressed by the first path segment (for per-resource limits and logs).
+     */
+    private function targetResource(Request $request): ?Resource
+    {
+        $first = $request->segments()[0] ?? null;
+        if ($first === null || in_array($first, ResourceRegistry::RESERVED, true)) {
+            return null;
+        }
+
+        return $this->api->registry()->find($first);
+    }
+
+    private function rateLimit(Request $request, AuthContext $auth, ?Resource $resource): void
+    {
+        $result = $this->api->rateLimiter()->hit($auth, $request->clientIp(), $resource);
+        if ($result === null) {
+            return;
+        }
+        $this->limitHeaders = [
+            'X-RateLimit-Limit' => (string) $result['limit'],
+            'X-RateLimit-Remaining' => (string) $result['remaining'],
+            'X-RateLimit-Reset' => (string) $result['reset'],
+        ];
+        if (! $result['allowed']) {
+            $retry = max(1, $result['reset']);
+            $this->limitHeaders['Retry-After'] = (string) $retry;
+            throw new ApiException('Too many requests. Try again in ' . $retry . ' seconds.', 429, 'rate_limited');
+        }
+    }
+
+    private function logRequest(Request $request, Response $response, ?AuthContext $auth, ?Resource $target, int $started, bool $internal): void
+    {
+        try {
+            $user = $auth?->userId();
+            $this->api->logs()->request(array_filter([
+                'method' => $request->method(),
+                'path' => '/' . ltrim($request->path(), '/'),
+                'query' => LogStore::redactQuery($request->queryString()),
+                'status' => $response->getStatus(),
+                'duration_ms' => round((hrtime(true) - $started) / 1e6, 2),
+                'ip' => $request->clientIp(),
+                'role' => $auth?->role,
+                'auth' => $auth?->method,
+                'key_id' => $auth?->apiKeyId,
+                'user' => is_scalar($user) ? (string) $user : null,
+                'resource' => $target?->getName(),
+                'via' => $internal ? 'console' : 'api',
+                'user_agent' => mb_substr((string) $request->header('user-agent'), 0, 200),
+                'error' => $this->lastError,
+            ], static fn (mixed $v): bool => $v !== null && $v !== ''));
+        } catch (Throwable) {
+            // logging must never break a response
+        }
     }
 
     private function route(Request $request, AuthContext $auth): Response
@@ -106,7 +198,13 @@ final class ApiKernel
                     throw ApiException::notFound();
                 }
 
-                return Response::json($this->api->openApi($request->baseUrl()));
+                return Response::json($this->api->openApi($request->baseUrl(), $auth));
+
+            case 'sdk.js':
+                // The JavaScript SDK, so browsers can `import GroceryRestable from '{api}/sdk.js'`.
+                $this->allowMethods($method, ['GET']);
+
+                return Response::text((string) file_get_contents(self::SDK_FILE), 'application/javascript; charset=utf-8', 200, ['Cache-Control' => 'public, max-age=3600']);
 
             case '_schema':
                 $this->allowMethods($method, ['GET']);
@@ -385,9 +483,19 @@ final class ApiKernel
         $bucket = $rest[0];
         $path = implode('/', array_slice($rest, 1));
 
+        $objectUrl = fn (string $key): string => $request->baseUrl() . '/storage/' . rawurlencode($bucket) . '/' . implode('/', array_map('rawurlencode', explode('/', $key)));
+
         if ($path === '') {
             if ($method === 'GET') {
-                return Response::json($storage->listObjects($bucket, (string) $request->queryParam('prefix'), $auth));
+                // ListObjectsV2: prefix, delimiter ("/" or "" for a recursive listing), limit, cursor.
+                return Response::json($storage->listObjects(
+                    $bucket,
+                    (string) $request->queryParam('prefix'),
+                    $auth,
+                    $request->queryParam('delimiter') ?? '/',
+                    (int) ($request->queryParam('limit') ?? StorageService::MAX_LIST),
+                    (string) $request->queryParam('cursor'),
+                ));
             }
             if ($method === 'POST' || $method === 'PUT') {
                 $file = $request->file('file') ?? throw ValidationException::forField('file', 'Send the file in a multipart "file" field.');
@@ -399,22 +507,40 @@ final class ApiKernel
                     isset($body['name']) ? (string) $body['name'] : $request->queryParam('name'),
                     $method === 'PUT' || filter_var($body['upsert'] ?? $request->queryParam('upsert') ?? false, FILTER_VALIDATE_BOOLEAN),
                     $auth,
+                    ['cacheControl' => $body['cache_control'] ?? $request->header('x-cache-control'), 'metadata' => $body['metadata'] ?? null],
                 );
-                $object['url'] = $request->baseUrl() . '/storage/' . rawurlencode($bucket) . '/' . implode('/', array_map('rawurlencode', explode('/', $object['path'])));
+                $this->api->janitor()->routine();
 
-                return Response::json($object, 201);
+                return Response::json($object + ['url' => $objectUrl($object['path'])], $object['replaced'] ? 200 : 201);
             }
             throw ApiException::methodNotAllowed();
         }
 
+        if (($method === 'GET' || $method === 'HEAD') && $request->queryParam('info') !== null) {
+            $info = $storage->info($bucket, $path, $auth);
+
+            return Response::json($info + ['url' => $objectUrl($info['path'])]);
+        }
         if ($method === 'GET' || $method === 'HEAD') {
             $file = $storage->download($bucket, $path, $auth);
+            $headers = [
+                'ETag' => '"' . $file['etag'] . '"',
+                'Last-Modified' => gmdate('D, d M Y H:i:s', (int) strtotime((string) $file['last_modified'])) . ' GMT',
+                'Cache-Control' => $file['cache_control'],
+            ];
+            $ifNoneMatch = (string) $request->header('if-none-match');
+            if ($ifNoneMatch !== '' && in_array($headers['ETag'], array_map('trim', explode(',', str_replace('W/', '', $ifNoneMatch))), true)) {
+                return Response::noContent(304, $headers);
+            }
+            if ($method === 'HEAD') {
+                return Response::noContent(200, $headers + ['Content-Type' => $file['mime'], 'Content-Length' => (string) $file['size']]);
+            }
 
-            return Response::file($file['path'], $file['name'], $file['mime'], $request->queryParam('download') === null)
-                ->withHeader('Cache-Control', ! empty($storage->bucket($bucket)['public']) ? 'public, max-age=3600' : 'private, no-store');
+            return Response::file($file['path'], $file['download_name'], $file['mime'], $request->queryParam('download') === null)->withHeaders($headers);
         }
         if ($method === 'DELETE') {
             $storage->delete($bucket, $path, $auth);
+            $this->api->janitor()->routine();
 
             return Response::noContent();
         }
@@ -572,7 +698,7 @@ final class ApiKernel
         $headers = [
             'Access-Control-Allow-Methods' => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
             'Access-Control-Allow-Headers' => 'apikey, authorization, content-type, prefer, range, x-api-key, x-http-method-override, x-requested-with',
-            'Access-Control-Expose-Headers' => 'Content-Range, X-Total-Count, Location, Content-Disposition',
+            'Access-Control-Expose-Headers' => 'Content-Range, X-Total-Count, Location, Content-Disposition, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After',
             'Access-Control-Max-Age' => (string) (int) $store->setting('cors_max_age', 600),
         ];
         if (in_array('*', $allowed, true)) {
@@ -628,6 +754,8 @@ final class ApiKernel
         if ($status >= 500 || ! $e instanceof ApiException) {
             $this->api->log('error', 'Grocery Restable: ' . $e->getMessage(), ['exception' => $e, 'path' => $request->path()]);
         }
+        $this->lastError = ['code' => $code, 'message' => $message]
+            + (! $e instanceof ApiException ? ['exception' => $e::class, 'detail' => mb_substr($e->getMessage(), 0, 500)] : []);
 
         $payload = ['error' => array_filter(['code' => $code, 'message' => $message, 'details' => $details ?: null], static fn (mixed $v): bool => $v !== null)];
         if ($debug && ! $e instanceof ApiException) {

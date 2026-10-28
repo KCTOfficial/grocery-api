@@ -85,10 +85,12 @@ final class UploadStorageTest extends ApiTestCase
         self::assertSame('users/1/me-photo.png', $object['path']);
 
         self::assertSame(409, $this->call('POST', 'storage/avatars', null, [], ['file' => $this->png()], ['path' => 'users/1'])[0]);
-        self::assertSame(201, $this->call('POST', 'storage/avatars', null, [], ['file' => $this->png()], ['path' => 'users/1', 'upsert' => '1'])[0]);
+        self::assertSame(200, $this->call('POST', 'storage/avatars', null, [], ['file' => $this->png()], ['path' => 'users/1', 'upsert' => '1'])[0], 'replacing answers 200');
 
-        [, $list] = $this->call('GET', 'storage/avatars?prefix=users/1');
+        [, $list] = $this->call('GET', 'storage/avatars?prefix=users/1/');
         self::assertSame(['me-photo.png'], array_column($list['files'], 'name'));
+        [, $root] = $this->call('GET', 'storage/avatars');
+        self::assertSame(['users/'], $root['prefixes']);
 
         self::assertSame(200, $this->call('GET', 'storage/avatars/users/1/me-photo.png')[0]);
         self::assertSame(422, $this->call('GET', 'storage/avatars/../../grocery-restable.sqlite')[0]);

@@ -1,6 +1,6 @@
 ---
 title: "Resources"
-description: "Define resources in code, in the GUI or automatically — full method reference."
+description: "Define resources in code, in the GUI or automatically - full method reference."
 ---
 
 A **resource** is a table or view exposed under `/api/{name}`. Resources come from three sources:
@@ -8,7 +8,7 @@ A **resource** is a table or view exposed under `/api/{name}`. Resources come fr
 | Source | How | Notes |
 |---|---|---|
 | **code** | `$api->resource('employees')->…` (CodeIgniter: `define()` of `app/Config/GroceryRestable.php`) | Supports everything, including callbacks, scopes and actions. Read-only in the GUI. |
-| **GUI** | *API resource* tab, stored in SQLite | Everything that is serializable (no PHP callbacks). Can be exported as code. |
+| **GUI** | Endpoint editor of the **API** area, stored in SQLite | Everything that is serializable (no PHP callbacks). Can be exported as code. |
 | **auto** | `auto_expose` setting | One resource per table of the default connection; relations from foreign keys; default permissions. |
 
 Precedence for the same name: **code > GUI > auto**. A table that already has a code or GUI resource is never
@@ -45,6 +45,7 @@ All methods return the resource (fluent) unless noted. Lists of columns can be p
 | `setSubject(string $subject, ?string $plural = null)` | Human name (OpenAPI tags, GUI). |
 | `setDescription(string $text)` | OpenAPI description. |
 | `setPrimaryKey(string $field, ?string $table = null)` | Primary key of this table (views, tables without PK) or, with `$table`, of a related table. Without a single-column primary key only the list endpoint is available. |
+| `setIdGenerator(?string $generator)` | Primary key of new rows when the client sends none: `'uuid'` (v4, random), `'uuid7'` (v7, time ordered), `'none'` (database or client), `null` = auto. See [Primary keys and UUIDs](#primary-keys-and-uuids). |
 
 ### Columns and fields
 
@@ -134,8 +135,9 @@ Disabled operations answer `405 Method Not Allowed`. Views are exposed read-only
 | `orderBy($field, $direction = 'asc')` | Default order when the client sends none (the primary key is always appended for stable paging). |
 | `limit(int $perPage)` | Default page size. |
 | `setMaxLimit(int $max)` | Maximum page size for this resource. |
+| `setRateLimit(int $requests, int $window = 60)` | Own rate limit: at most `$requests` per `$window` seconds and per client (`0` = unlimited). Without it the global limit applies, see [Rate limiting](rate-limiting.md). |
 
-Raw SQL is never accepted in these conditions — use a column name and an operator (`=`, `!=`, `<`, `<=`, `>`, `>=`,
+Raw SQL is never accepted in these conditions - use a column name and an operator (`=`, `!=`, `<`, `<=`, `>`, `>=`,
 `in`, `not in`, `is null`, `is not null`, `like`, `not like`).
 
 ### Security
@@ -186,13 +188,34 @@ $api->resource('orders')
     ->callbackBeforeInsert(fn (array $data, AuthContext $auth) => $data + ['created_by' => $auth->userId()]);
 ```
 
+## Primary keys and UUIDs
+
+IDs do not have to be auto increment numbers. When a client creates a row without its primary key:
+
+| Generator | Value |
+|---|---|
+| auto (default) | UUID v4 when the key column has the `uuid` type (PostgreSQL `uuid`, any column declared `UUID`) and no default; otherwise the database decides (auto increment, default). |
+| `'uuid'` | A random UUID v4 in any text column (`CHAR(36)`, `VARCHAR(36)`, `TEXT`, `uuid`). |
+| `'uuid7'` | A UUID v7: starts with the creation time, so new rows sort last and B-tree indexes stay compact. |
+| `'none'` | Never generated: auto increment, a database default or a value sent by the client. |
+
+```php
+$api->resource('orders')->setIdGenerator('uuid7');
+```
+
+Clients may still send their own id; with `uuid` / `uuid7` it must be a valid UUID (`422` otherwise). The generated id
+is returned like any other (`Location` header, `Prefer: return=representation`) and the `before_insert` callbacks
+already see it. In the GUI: **API** > endpoint > **General** > *ID of new records*; the **Data** row editor has a
+*UUID* button for primary keys that are not auto increment.
+
 ## Auto generated resources
 
-Auto expose (and *Create API resource* in the GUI) builds resources from the schema:
+Auto expose (and *New endpoint* in the GUI) builds resources from the schema:
 
 - one `belongs_to` per single-column foreign key, named after the referenced table (or the column without
   `_id`/`Id` when that collides), title guessed from `name`, `title`, `label`, `fullname`, `username`, `email`,
-  `code`, `subject`, `description` or the first string column;
+  `code`, `subject`, `description` or the first string column whose name does not look secret (`password`, `token`,
+  `hash`, `key` ...);
 - one `has_many` per foreign key pointing to the table (name = child table, `{child}_by_{column}` on collisions);
 - one `many_to_many` through every junction table (two single-column foreign keys forming the primary key, or a
   small table of at most five columns);

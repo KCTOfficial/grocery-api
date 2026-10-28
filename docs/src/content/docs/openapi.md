@@ -19,8 +19,10 @@ sidebar:
   `or`, `Prefer`) and a filter parameter per column;
 - security schemes `apiKey` (header `apikey`) and `bearer`.
 
-The document lists every resource regardless of the caller (it describes the API, not data). Disable it with the
-`expose_openapi` setting; it stays available to `service_role`.
+The document only describes what the caller can use: resources on which its role has at least one permission,
+the buckets it can read and the RPC functions it may call (an anonymous caller does not learn the names of private
+tables or columns). `service_role` gets everything. Disable it with the `expose_openapi` setting; it stays available
+to `service_role`.
 
 ### Swagger UI / Redoc / Postman
 

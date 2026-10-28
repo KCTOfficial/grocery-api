@@ -5,7 +5,7 @@ sidebar:
   label: "REST API reference"
 ---
 
-Base URL: `{apiUrl}` — by default `https://your-app/api`. All bodies are JSON (`application/json`) unless noted;
+Base URL: `{apiUrl}` - by default `https://your-app/api`. All bodies are JSON (`application/json`) unless noted;
 multipart (`multipart/form-data`) and form (`application/x-www-form-urlencoded`) bodies are accepted for writes.
 
 The query syntax is compatible with [PostgREST](https://postgrest.org/en/stable/references/api/tables_views.html)
@@ -16,7 +16,8 @@ for the common cases, so existing PostgREST / Supabase clients mostly work uncha
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/` | Index: resources visible to the caller, OpenAPI and storage URLs, current role |
-| `GET` | `/openapi.json` | OpenAPI 3.1 document ([OpenAPI](openapi.md)) |
+| `GET` | `/openapi.json` | OpenAPI 3.1 document of what the caller can use ([OpenAPI](openapi.md)) |
+| `GET` | `/sdk.js` | The [JavaScript SDK](javascript-sdk.md) as an ES module |
 | `GET` | `/_schema` · `/_schema/{resource}` · `/{resource}/_schema` | Field metadata for UI builders |
 | `GET` | `/{resource}` | List rows |
 | `POST` | `/{resource}` | Create one row (object) or many (array); upsert with `Prefer: resolution=merge-duplicates` |
@@ -34,12 +35,18 @@ for the common cases, so existing PostgREST / Supabase clients mostly work uncha
 | `POST` | `/{resource}/{id}/actions/{action}` | Custom action |
 | `GET`/`POST` | `/rpc/{function}` | Remote procedure |
 | `GET` | `/storage` | Buckets visible to the caller |
-| `GET`/`POST` | `/storage/{bucket}` | List objects / upload |
-| `GET`/`DELETE` | `/storage/{bucket}/{path}` | Download / delete an object |
+| `GET`/`POST` | `/storage/{bucket}` | List objects (`prefix`, `delimiter`, `limit`, `cursor`, like S3 ListObjectsV2) / upload |
+| `GET`/`HEAD`/`DELETE` | `/storage/{bucket}/{key}` | Download (with `ETag`, `304` on `If-None-Match`) / headers only / delete an object |
+| `GET` | `/storage/{bucket}/{key}?info` | Object metadata (size, etag, mime, cache_control, metadata, owner, dates) |
 | `OPTIONS` | any | CORS preflight (`204`) |
 
-`{id}` is the primary key value (URL encoded). Methods other than `GET`/`POST` can be tunnelled through `POST` with
-`X-HTTP-Method-Override: PATCH` or a `_method=PATCH` form field (needed for multipart updates in browsers and PHP).
+`{id}` is the primary key value (URL encoded). For multipart and form bodies, `PUT` / `PATCH` / `DELETE` can be
+tunnelled through `POST` with `X-HTTP-Method-Override: PATCH` or a `_method=PATCH` form field (browsers and PHP only
+parse multipart bodies on `POST`). JSON requests always use their real method.
+
+Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` while
+[rate limiting](rate-limiting.md) applies. Query strings are limited to 16 KB (`414`) and `select` / `or` / `and`
+to 10 nested levels (`400`).
 
 ## Authentication headers
 
@@ -184,13 +191,13 @@ Content-Type: application/json
 `201 Created`, `Location: /api/employees/1704`, body = the created row (respecting `?select=`). Use
 `Prefer: return=minimal` for an empty `201`.
 
-Bulk insert — send an array (max `maxBulkRows`, one transaction, all-or-nothing):
+Bulk insert - send an array (max `maxBulkRows`, one transaction, all-or-nothing):
 
 ```json
 [{ "title": "A" }, { "title": "B" }]
 ```
 
-Upsert — rows whose primary key exists are updated (partial), the others inserted:
+Upsert - rows whose primary key exists are updated (partial), the others inserted:
 
 ```http
 POST /film
@@ -302,11 +309,20 @@ GET /_schema/employees
 }
 ```
 
-`permissions` are those of the caller — handy to build forms and hide buttons.
+`permissions` are those of the caller - handy to build forms and hide buttons.
 
 ## Client examples
 
-JavaScript (`fetch`):
+The easiest way is the [JavaScript SDK](javascript-sdk.md):
+
+```js
+import GroceryRestable from 'https://example.com/api/sdk.js';
+
+const gr = new GroceryRestable('https://example.com/api', { apiKey: ANON_KEY });
+const { items } = await gr.collection('orders').getList(1, 20, { filter: { status: 'Shipped' }, select: 'orderNumber,status,customer(customerName)' });
+```
+
+Plain `fetch`:
 
 ```js
 const api = (path, options = {}) => fetch(`https://example.com/api/${path}`, {

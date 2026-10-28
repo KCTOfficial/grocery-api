@@ -7,6 +7,7 @@ namespace GroceryRestable\Resource;
 use BadMethodCallException;
 use GroceryRestable\Database\Schema\Table;
 use GroceryRestable\Exception\ConfigurationException;
+use GroceryRestable\Support\Uuid;
 
 /**
  * Definition of an API resource (one table or view exposed as an endpoint).
@@ -104,6 +105,10 @@ final class Resource
     private array $orderBy = [];
     private ?int $perPage = null;
     private ?int $maxLimit = null;
+    /** Primary key generator for inserts: null = auto (UUID for uuid columns), "uuid", "uuid7" or "none". */
+    private ?string $idGenerator = null;
+    /** @var array{requests: int, window: int}|null Overrides the global API rate limit for this resource. */
+    private ?array $rateLimit = null;
     /** @var array<string, list<string>>|null */
     private ?array $permissions = null;
 
@@ -618,6 +623,51 @@ final class Resource
         return $this;
     }
 
+    /**
+     * How the primary key of new rows is generated when the client does not send one:
+     *   "uuid"  random UUID (v4)
+     *   "uuid7" time ordered UUID (v7), friendlier to database indexes
+     *   "none"  never generate (the database or the client provides it)
+     *   null    auto: UUID v4 for uuid columns without a default, otherwise the database decides
+     */
+    public function setIdGenerator(?string $generator): self
+    {
+        $generator = $generator === 'auto' || $generator === '' ? null : $generator;
+        if ($generator !== null && ! in_array($generator, [...Uuid::GENERATORS, 'none'], true)) {
+            throw new ConfigurationException('Unknown id generator "' . $generator . '". Use uuid, uuid7, none or auto.');
+        }
+        $this->idGenerator = $generator;
+
+        return $this;
+    }
+
+    public function getIdGenerator(): ?string
+    {
+        return $this->idGenerator;
+    }
+
+    /**
+     * Rate limit of this resource: at most $requests per $window seconds and per client.
+     * Overrides the global limit from the settings; 0 requests disables limiting for this resource.
+     */
+    public function setRateLimit(int $requests, int $window = 60): self
+    {
+        if ($requests < 0 || $window < 1) {
+            throw new ConfigurationException('The rate limit needs requests >= 0 and a window >= 1 second.');
+        }
+        $this->rateLimit = ['requests' => $requests, 'window' => $window];
+
+        return $this;
+    }
+
+    /**
+     * @return array{requests: int, window: int}|null
+     */
+    public function getRateLimit(): ?array
+    {
+        return $this->rateLimit;
+    }
+
     // ------------------------------------------------------------------
     // Security
     // ------------------------------------------------------------------
@@ -1053,7 +1103,7 @@ final class Resource
     }
 
     /**
-     * Relation names listed in columns() — embedded by default in list output.
+     * Relation names listed in columns() - embedded by default in list output.
      *
      * @return list<string>
      */
@@ -1063,7 +1113,7 @@ final class Resource
     }
 
     /**
-     * Relation names listed in setReadFields() — embedded by default in single record output.
+     * Relation names listed in setReadFields() - embedded by default in single record output.
      *
      * @return list<string>
      */
@@ -1261,6 +1311,8 @@ final class Resource
             'orderBy' => $this->orderBy,
             'perPage' => $this->perPage,
             'maxLimit' => $this->maxLimit,
+            'idGenerator' => $this->idGenerator,
+            'rateLimit' => $this->rateLimit,
             'permissions' => $this->permissions,
         ];
     }
@@ -1324,6 +1376,12 @@ final class Resource
         }
         if (! empty($data['maxLimit'])) {
             $resource->setMaxLimit((int) $data['maxLimit']);
+        }
+        if (isset($data['idGenerator'])) {
+            $resource->setIdGenerator((string) $data['idGenerator']);
+        }
+        if (isset($data['rateLimit']['requests'])) {
+            $resource->setRateLimit((int) $data['rateLimit']['requests'], (int) ($data['rateLimit']['window'] ?? 60));
         }
         if (isset($data['permissions']) && is_array($data['permissions'])) {
             $resource->permissions = [];

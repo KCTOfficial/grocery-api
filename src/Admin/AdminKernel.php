@@ -22,6 +22,7 @@ use GroceryRestable\Resource\ResourceRegistry;
 use GroceryRestable\Service\StorageService;
 use GroceryRestable\Store\ConfigStore;
 use GroceryRestable\Support\Jwt;
+use GroceryRestable\Support\Uuid;
 use Throwable;
 
 /**
@@ -33,6 +34,12 @@ final class AdminKernel
     private const IDLE_TIMEOUT = 7200;
     private const MAX_FAILED_LOGINS = 5;
     private const THROTTLE_WINDOW = 900;
+    /** XHR actions that only read; every other action is written to the admin log. */
+    private const READ_ACTIONS = [
+        'bootstrap', 'tables', 'table.structure', 'table.browse', 'resources.list', 'resource.get', 'resource.generate', 'resource.code',
+        'connections.list', 'connection.test', 'apikeys.list', 'buckets.list', 'bucket.objects', 'settings.get', 'users.list',
+        'openapi', 'console', 'jwt.generate', 'logs.days', 'logs.read', 'bucket.object.info', 'storage.scan',
+    ];
     /** Content types of the files served from src/Admin/assets (anything else is refused). */
     private const ASSET_TYPES = [
         'js' => 'application/javascript; charset=utf-8',
@@ -64,6 +71,7 @@ final class AdminKernel
                 $page === 'logout' && $method === 'POST' => $this->logout($request),
                 $page === 'xhr' && $method === 'POST' => $this->xhr($request),
                 $page === 'download' && $method === 'GET' => $this->download($request),
+                $page === 'log' && $method === 'GET' => $this->downloadLog($request),
                 $page === '' => $this->appPage($request),
                 default => $this->html('Not found', 404),
             };
@@ -136,6 +144,8 @@ final class AdminKernel
         $store = $this->api->store();
         $ip = $request->clientIp() !== '' ? $request->clientIp() : 'unknown';
         if ($store->recentFailedLogins($ip, self::THROTTLE_WINDOW) >= self::MAX_FAILED_LOGINS) {
+            $this->api->logs()->admin('login.throttled', ['ip' => $ip], 'warning');
+
             return $this->loginPage($request, 'Too many failed attempts. Try again in 15 minutes.', 429);
         }
 
@@ -143,11 +153,13 @@ final class AdminKernel
         $user = $store->verifyUser($username, (string) ($body['password'] ?? ''));
         if ($user === null) {
             $store->recordFailedLogin($ip, $username);
+            $this->api->logs()->admin('login.failed', ['ip' => $ip, 'user' => mb_substr($username, 0, 64)], 'warning');
 
             return $this->loginPage($request, 'Invalid username or password.', 401);
         }
 
         $store->clearFailedLogins($ip);
+        $this->api->logs()->admin('login', ['ip' => $ip, 'user' => $user['username']]);
         $this->session->regenerate();
         $this->session->set('user_id', (int) $user['id']);
         $this->session->set('last_activity', time());
@@ -293,7 +305,24 @@ final class AdminKernel
         }
         $file = $this->api->storage()->download((string) $request->queryParam('bucket'), (string) $request->queryParam('path'), AuthContext::service('admin'));
 
-        return Response::file($file['path'], $file['name'], $file['mime'], false);
+        return Response::file($file['path'], $file['download_name'], $file['mime'], false);
+    }
+
+    /**
+     * Download the JSON log of a day (admin session required).
+     */
+    private function downloadLog(Request $request): Response
+    {
+        if ($this->currentUser() === null) {
+            throw ApiException::unauthorized();
+        }
+        $day = (string) $request->queryParam('day');
+        $path = $this->api->logs()->path($day);
+        if (! is_file($path)) {
+            throw ApiException::notFound('No log for ' . $day . '.');
+        }
+
+        return Response::file($path, 'grocery-restable-' . $day . '.jsonl', 'application/x-ndjson', false);
     }
 
     // ------------------------------------------------------------------
@@ -311,6 +340,13 @@ final class AdminKernel
         $action = (string) ($body['action'] ?? '');
         $store = $this->api->store();
         $registry = $this->api->registry();
+        if (! in_array($action, self::READ_ACTIONS, true)) {
+            $this->api->logs()->admin($action, array_filter([
+                'user' => $user['username'],
+                'ip' => $request->clientIp(),
+                'target' => $this->actionTarget($body),
+            ], static fn (mixed $v): bool => $v !== null && $v !== ''));
+        }
 
         $result = match ($action) {
             'bootstrap' => $this->bootstrapData($user),
@@ -336,15 +372,27 @@ final class AdminKernel
             'apikey.delete' => $this->done($store->deleteApiKey((int) ($body['id'] ?? 0))),
             'buckets.list' => array_values($this->api->storage()->buckets()),
             'bucket.save' => $this->bucketSave($body),
-            'bucket.delete' => $this->done($store->deleteBucket((string) ($body['name'] ?? ''))),
-            'bucket.objects' => $this->api->storage()->listObjects((string) ($body['bucket'] ?? ''), (string) ($body['prefix'] ?? ''), AuthContext::service('admin')),
+            'bucket.delete' => $this->bucketDelete($body),
+            'bucket.objects' => $this->api->storage()->listObjects(
+                (string) ($body['bucket'] ?? ''),
+                (string) ($body['prefix'] ?? ''),
+                AuthContext::service('admin'),
+                (string) ($body['delimiter'] ?? '/'),
+                (int) ($body['limit'] ?? StorageService::MAX_LIST),
+                (string) ($body['cursor'] ?? ''),
+            ),
+            'bucket.object.info' => $this->api->storage()->info((string) ($body['bucket'] ?? ''), (string) ($body['path'] ?? ''), AuthContext::service('admin')),
+            'bucket.reindex' => $this->api->storage()->reindex((string) ($body['bucket'] ?? '')),
+            'storage.scan' => $this->api->janitor()->scan(isset($body['minAgeHours']) ? (int) $body['minAgeHours'] : null),
+            'storage.clean' => $this->api->janitor()->clean(array_map('strval', (array) ($body['tasks'] ?? [])), isset($body['minAgeHours']) ? (int) $body['minAgeHours'] : null),
             'bucket.upload' => $this->bucketUpload($request, $body),
             'bucket.object.delete' => $this->done($this->api->storage()->delete((string) ($body['bucket'] ?? ''), (string) ($body['path'] ?? ''), AuthContext::service('admin'))),
             'settings.get' => $this->settingsGet(),
             'settings.save' => $this->settingsSave((array) ($body['settings'] ?? [])),
             'users.list' => $store->users(),
             'user.create' => ['id' => $store->createUser((string) ($body['username'] ?? ''), (string) ($body['password'] ?? ''))],
-            'user.password' => $this->done($store->changePassword((int) ($body['id'] ?? $user['id']), (string) ($body['password'] ?? ''))),
+            'user.update' => $this->userUpdate($body, $user),
+            'account.update' => $this->accountUpdate($body, $user),
             'user.delete' => $this->userDelete($body, $user),
             'schema.refresh' => $this->done($this->api->schema()->refresh(isset($body['connection']) ? (string) $body['connection'] : null)),
             'openapi' => $this->api->openApi($this->api->config()->apiUrl()),
@@ -352,6 +400,16 @@ final class AdminKernel
             'jwt.generate' => $this->jwtGenerate($body),
             'config.export' => $store->export(),
             'config.import' => $this->import((array) ($body['data'] ?? [])),
+            'logs.days' => $this->api->logs()->days(),
+            'logs.read' => $this->api->logs()->read(
+                (string) ($body['day'] ?? date('Y-m-d')),
+                array_intersect_key((array) ($body['filters'] ?? []), array_flip(['type', 'level', 'method', 'status', 'resource', 'search'])),
+                (int) ($body['page'] ?? 1),
+                (int) ($body['perPage'] ?? 50),
+            ),
+            'logs.delete' => ['deleted' => isset($body['day'])
+                ? (int) $this->api->logs()->delete((string) $body['day'])
+                : $this->api->logs()->deleteOlderThan((int) ($body['keepDays'] ?? 0))],
             default => throw ApiException::badRequest('Unknown action "' . $action . '".'),
         };
 
@@ -375,6 +433,12 @@ final class AdminKernel
         if ((string) $this->api->config()->get('encryptionKey', '') === '') {
             $warnings[] = 'No encryptionKey configured: secrets are encrypted with the generated key file in the storage directory. Back it up or set encryptionKey.';
         }
+        if (! $store->setting('rate_limit_enabled', true)) {
+            $warnings[] = 'Rate limiting is disabled: clients can send unlimited requests.';
+        }
+        if ($store->setting('jwt_allow_service_role', false)) {
+            $warnings[] = 'JWTs may grant the service_role role (full access). Only enable this when you control every token issuer.';
+        }
         if (in_array('*', (array) $store->setting('cors_origins', []), true)) {
             $warnings[] = 'CORS allows every origin ("*").';
         }
@@ -390,6 +454,9 @@ final class AdminKernel
             'permissions' => Resource::PERMISSIONS,
             'operations' => Resource::OPERATIONS,
             'authModes' => Authenticator::MODES,
+            'idGenerators' => Uuid::GENERATORS,
+            'logPath' => $this->api->config()->logPath(),
+            'trashPath' => $this->api->janitor()->trashRoot(),
             'reserved' => ResourceRegistry::RESERVED,
             'apiUrl' => $this->api->config()->apiUrl(),
             'warnings' => $warnings,
@@ -565,10 +632,13 @@ final class AdminKernel
         if ($values === []) {
             return ['affected' => 0];
         }
+        $before = $db->select('SELECT * FROM ' . $grammar->wrapTable($table->name) . $whereSql, $whereBindings)[0] ?? null;
         $sets = implode(', ', array_map(static fn (string $c): string => $grammar->wrap($c) . ' = ?', array_keys($values)));
         $affected = $db->execute('UPDATE ' . $grammar->wrapTable($table->name) . ' SET ' . $sets . $whereSql, [...array_values($values), ...$whereBindings]);
+        // A replaced file name leaves the old upload behind: delete it unless another row uses it.
+        $released = $before !== null ? $this->api->janitor()->releaseRowFiles($this->connectionName($body), $table->name, $before, $values) : 0;
 
-        return ['affected' => $affected];
+        return ['affected' => $affected, 'filesDeleted' => $released];
     }
 
     /**
@@ -581,8 +651,12 @@ final class AdminKernel
         $db = $this->api->connections()->get($this->connectionName($body));
         $grammar = Grammar::for($db->driver());
         [$whereSql, $bindings] = $this->keyWhere($table, $grammar, (array) ($body['key'] ?? []));
+        $before = $db->select('SELECT * FROM ' . $grammar->wrapTable($table->name) . $whereSql, $bindings)[0] ?? null;
+        $affected = $db->execute('DELETE FROM ' . $grammar->wrapTable($table->name) . $whereSql, $bindings);
+        // Like the API, deleting a row deletes its upload files (setting delete_replaced_files).
+        $released = $before !== null && $affected > 0 ? $this->api->janitor()->releaseRowFiles($this->connectionName($body), $table->name, $before) : 0;
 
-        return ['affected' => $db->execute('DELETE FROM ' . $grammar->wrapTable($table->name) . $whereSql, $bindings)];
+        return ['affected' => $affected, 'filesDeleted' => $released];
     }
 
     /**
@@ -875,7 +949,24 @@ final class AdminKernel
             null,
             filter_var($body['upsert'] ?? false, FILTER_VALIDATE_BOOLEAN),
             AuthContext::service('admin'),
+            ['cacheControl' => $body['cache_control'] ?? null, 'metadata' => $body['metadata'] ?? null],
         );
+    }
+
+    /**
+     * Delete a bucket definition; with "purge" its files go to the trash, otherwise they stay on disk
+     * (and are reported as an orphan bucket by the storage cleanup).
+     *
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function bucketDelete(array $body): array
+    {
+        $name = (string) ($body['name'] ?? '');
+        $this->api->store()->deleteBucket($name);
+        $trashed = ! empty($body['purge']) && $this->api->janitor()->trashBucket($name);
+
+        return ['ok' => true, 'trashed' => $trashed];
     }
 
     /**
@@ -913,12 +1004,20 @@ final class AdminKernel
         if (isset($values['jwt_algorithm']) && ! in_array($values['jwt_algorithm'], ['HS256', 'HS384', 'HS512'], true)) {
             throw ValidationException::forField('jwt_algorithm', 'Unsupported algorithm.');
         }
-        foreach (['default_per_page', 'max_limit', 'schema_cache_ttl', 'cors_max_age'] as $int) {
+        if (isset($values['log_requests']) && ! in_array($values['log_requests'], ['all', 'errors', 'none'], true)) {
+            throw ValidationException::forField('log_requests', 'Use all, errors or none.');
+        }
+        foreach (['default_per_page', 'max_limit', 'schema_cache_ttl', 'cors_max_age', 'rate_limit_requests', 'rate_limit_anon_requests', 'log_retention_days',
+            'orphan_min_age_hours', 'storage_trash_days'] as $int) {
             if (isset($values[$int])) {
                 $values[$int] = max(0, (int) $values[$int]);
             }
         }
-        foreach (['auto_expose', 'allow_query_apikey', 'cors_enabled', 'response_envelope', 'delete_replaced_files', 'expose_openapi'] as $bool) {
+        if (isset($values['rate_limit_window'])) {
+            $values['rate_limit_window'] = max(1, (int) $values['rate_limit_window']);
+        }
+        foreach (['auto_expose', 'allow_query_apikey', 'cors_enabled', 'response_envelope', 'delete_replaced_files', 'expose_openapi',
+            'rate_limit_enabled', 'rate_limit_exempt_service', 'log_admin', 'jwt_require_exp', 'jwt_allow_service_role', 'storage_auto_cleanup'] as $bool) {
             if (array_key_exists($bool, $values)) {
                 $values[$bool] = filter_var($values[$bool], FILTER_VALIDATE_BOOLEAN);
             }
@@ -941,6 +1040,74 @@ final class AdminKernel
         $this->api->registry()->reload();
 
         return $this->settingsGet();
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function userUpdate(array $body, array $user): array
+    {
+        $id = (int) ($body['id'] ?? 0);
+        if ($id === (int) $user['id']) {
+            throw ApiException::badRequest('Change your own account in "My account" (it asks for your current password).');
+        }
+        if (isset($body['username']) && $body['username'] !== '') {
+            $this->api->store()->changeUsername($id, (string) $body['username']);
+        }
+        if (isset($body['password']) && $body['password'] !== '') {
+            $this->api->store()->changePassword($id, (string) $body['password']);
+        }
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Change the username and / or password of the logged in admin (current password required).
+     *
+     * @param array<string, mixed> $body
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function accountUpdate(array $body, array $user): array
+    {
+        $id = (int) $user['id'];
+        if (! $this->api->store()->checkPassword($id, (string) ($body['current_password'] ?? ''))) {
+            throw ValidationException::forField('current_password', 'The current password is wrong.');
+        }
+        $username = trim((string) ($body['username'] ?? ''));
+        if ($username !== '' && $username !== $user['username']) {
+            $this->api->store()->changeUsername($id, $username);
+        }
+        $password = (string) ($body['password'] ?? '');
+        if ($password !== '') {
+            if ($password !== (string) ($body['password_confirm'] ?? '')) {
+                throw ValidationException::forField('password_confirm', 'The passwords do not match.');
+            }
+            $this->api->store()->changePassword($id, $password);
+            // A new session id after a password change; other sessions expire with the idle timeout.
+            $this->session->regenerate();
+        }
+
+        return ['ok' => true, 'username' => $username !== '' ? $username : $user['username']];
+    }
+
+    /**
+     * What an admin action is about, for the admin log (never a secret).
+     *
+     * @param array<string, mixed> $body
+     */
+    private function actionTarget(array $body): ?string
+    {
+        foreach (['name', 'table', 'bucket', 'day', 'id', 'username'] as $key) {
+            if (isset($body[$key]) && is_scalar($body[$key])) {
+                return mb_substr((string) $body[$key], 0, 100);
+            }
+        }
+        $definition = $body['definition'] ?? null;
+
+        return is_array($definition) && isset($definition['name']) && is_scalar($definition['name']) ? (string) $definition['name'] : null;
     }
 
     /**

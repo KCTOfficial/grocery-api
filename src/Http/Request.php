@@ -44,13 +44,15 @@ final class Request
     }
 
     /**
-     * HTTP method, honoring X-HTTP-Method-Override / _method on POST requests
-     * (multipart uploads can only be sent with POST by browsers and PHP).
+     * HTTP method, honoring X-HTTP-Method-Override / _method on multipart and form POST requests
+     * (multipart uploads can only be sent with POST by browsers and PHP). JSON requests use the real
+     * method, so proxies and firewalls see what is executed.
      */
     public function method(): string
     {
         $method = strtoupper($this->method);
-        if ($method === 'POST') {
+        $isForm = in_array($this->contentType(), ['multipart/form-data', 'application/x-www-form-urlencoded'], true);
+        if ($method === 'POST' && $isForm) {
             $override = strtoupper((string) ($this->header('x-http-method-override') ?? $this->formBody['_method'] ?? ''));
             if (in_array($override, ['PUT', 'PATCH', 'DELETE'], true)) {
                 return $override;

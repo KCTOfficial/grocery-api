@@ -137,11 +137,14 @@ final class UploadService
         return ['file_name' => $fileName, 'path' => $target, 'size' => $size, 'mime' => $checked['mime'], 'original_name' => $file->getClientFilename()];
     }
 
-    public function fieldDirectory(UploadField $field): string
+    /**
+     * Folder of a field upload; created unless $create is false.
+     */
+    public function fieldDirectory(UploadField $field, bool $create = true): string
     {
         $path = $field->path;
         $directory = self::isAbsolute($path) ? rtrim($path, '/\\') : $this->config->uploadPath() . ($path !== '' ? DIRECTORY_SEPARATOR . trim($path, '/\\') : '');
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+        if ($create && ! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
             throw new \RuntimeException('Unable to create upload directory.');
         }
 

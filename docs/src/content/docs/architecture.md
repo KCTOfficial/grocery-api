@@ -32,10 +32,10 @@ HTTP ──► CodeIgniter 4 (Routes, ApiController, AdminController, Bridge)  �
 | `src/Database/` | `ConnectionInterface`, `PdoConnection`, `MysqliConnection`, `ConnectionFactory`, `ConnectionManager`, grammars, schema inspectors |
 | `src/Resource/` | `Resource` (fluent definition), `Relation`, `UploadField`, `Conditions`, `ResourceRegistry`, `AutoResourceFactory`, `CodeExporter` |
 | `src/Query/` | PostgREST style query parser (`SelectNode`, `Filter`, `FilterGroup`, `QueryOptions`) |
-| `src/Service/` | `SqlCompiler`, `ResourceReader` (list, read, embedding, options), `ResourceWriter` (writes, validation, uploads, m2m), `UploadService`, `StorageService`, `RowTransformer` |
+| `src/Service/` | `SqlCompiler`, `ResourceReader` (list, read, embedding, options), `ResourceWriter` (writes, validation, uploads, m2m), `UploadService`, `StorageService` (S3 style buckets and object index), `StorageJanitor` (orphan files, housekeeping, trash), `RowTransformer` |
 | `src/Auth/` | `Authenticator` (keys, JWT, permissions), `AuthContext` |
 | `src/Http/` | `Request`, `Response`, `ApiKernel` (router), `NativeServer`, uploaded files |
-| `src/Admin/` | `AdminKernel`, `Installer`, sessions, views, `assets/admin.js`, `assets/admin.css` |
+| `src/Admin/` | `AdminKernel`, `Installer`, sessions, views, `assets/admin.css`, `assets/admin.js` (entry point and routes) and the modules in `assets/app/` (`core`, `router`, `components`, `shell`, `pages/*`) |
 | `src/OpenApi/` | OpenAPI generator |
 | `src/Validation/` | `ValidatorInterface`, built-in `Validator` |
 | `src/CodeIgniter4/` | Adapter: config, services, routes, controllers, bridge, CI connection / session / validator, spark commands, Grocery CRUD style library |
@@ -52,7 +52,7 @@ HTTP ──► CodeIgniter 4 (Routes, ApiController, AdminController, Bridge)  �
 5. `ResourceReader` runs the main query and one query per embedded relation; `RowTransformer` casts values and runs
    `callbackColumn`.
 6. Writes go through `ResourceWriter`: field checks, normalization, rules, uniqueness, uploads, callbacks, SQL,
-   many-to-many sync — inside a transaction.
+   many-to-many sync - inside a transaction.
 7. Exceptions become JSON errors; the adapter converts the `Response` back (files are streamed).
 
 ## Extension points

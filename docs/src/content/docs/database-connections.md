@@ -7,8 +7,8 @@ sidebar:
 
 A connection has two independent choices:
 
-- the **database engine** — the product that stores the data (MySQL / MariaDB, PostgreSQL, SQLite);
-- the **PHP driver** — the PHP extension used to talk to it (PDO, MySQLi, or the CodeIgniter database layer).
+- the **database engine** - the product that stores the data (MySQL / MariaDB, PostgreSQL, SQLite);
+- the **PHP driver** - the PHP extension used to talk to it (PDO, MySQLi, or the CodeIgniter database layer).
 
 PDO and MySQLi are *drivers*, not engines: PDO is one API with a sub-driver per engine (`pdo_mysql`,
 `pdo_pgsql`, `pdo_sqlite`), while MySQLi only speaks MySQL / MariaDB. The GUI therefore asks for both and only
@@ -19,14 +19,14 @@ enables the drivers that are installed on the server.
 | Engine | PDO | MySQLi | CodeIgniter 4 driver |
 |---|---|---|---|
 | MySQL 5.7+ / MariaDB 10.3+ | Yes, `pdo_mysql` | Yes, `mysqli` | Yes, `MySQLi` |
-| PostgreSQL 11+ | Yes, `pdo_pgsql` | — | Yes, `Postgre` |
-| SQLite 3.26+ | Yes, `pdo_sqlite` | — | Yes, `SQLite3` |
-| Microsoft SQL Server | not supported yet | — | not supported yet (`SQLSRV`) |
-| Oracle | not supported yet | — | not supported yet (`OCI8`) |
+| PostgreSQL 11+ | Yes, `pdo_pgsql` | - | Yes, `Postgre` |
+| SQLite 3.26+ | Yes, `pdo_sqlite` | - | Yes, `SQLite3` |
+| Microsoft SQL Server | not supported yet | - | not supported yet (`SQLSRV`) |
+| Oracle | not supported yet | - | not supported yet (`OCI8`) |
 
 Status of the test suite: SQLite (PDO) and MySQL 8.4 (PDO, MySQLi and CodeIgniter MySQLi) are covered by
 automated tests. The PostgreSQL code paths (introspection through `information_schema` / `pg_catalog`,
-`ILIKE`, `RETURNING`) are implemented but were not run against a live server in this release — please
+`ILIKE`, `RETURNING`) are implemented but were not run against a live server in this release - please
 report issues.
 
 ### Which driver should I pick?
@@ -47,7 +47,7 @@ and error mapping are used for a given engine.
 | Source | Defined in | Editable in the GUI |
 |---|---|---|
 | `framework` | CodeIgniter: `$databaseGroups` in `app/Config/GroceryRestable.php` | no (read-only) |
-| `gui` | Setup wizard or **Connections** page, stored in SQLite (password encrypted) | yes |
+| `gui` | Setup wizard or **Settings › Database connections**, stored in SQLite (password encrypted) | yes |
 | code | `$api->addConnection($name, fn () => new PdoConnection($pdo))` | no |
 
 The **default connection** is used by auto expose and by resources without `setConnection()`. Change it on the
@@ -86,14 +86,14 @@ Add more connections in the GUI or in `$databaseGroups`, then bind resources to 
 $api->resource('invoices')->setConnection('billing');
 ```
 
-In the GUI, every connection appears in the navigation tree; the API resource tab of a table stores the
-connection automatically. Relations always stay inside one connection.
+In the GUI, every connection appears in the navigation tree of the **Data** area; the endpoint editor of the **API** area
+stores the connection automatically. Relations always stay inside one connection.
 
 ## Schema cache
 
 Table structures are introspected once and cached in SQLite. Every request runs one cheap **fingerprint** query
 (MySQL: a checksum of `information_schema` columns and keys; PostgreSQL: an MD5 of the columns plus the key count;
-SQLite: `PRAGMA schema_version`). When it changes — a table, column or key was added, renamed or altered — the schema
+SQLite: `PRAGMA schema_version`). When it changes - a table, column or key was added, renamed or altered - the schema
 is introspected again immediately, so migrations are visible on the next request. `schema_cache_ttl` (default 300 s)
 is only an upper bound. You can still force a refresh with the refresh icon in the navigation, **Settings → Clear
 schema cache**, `php spark grocery-restable:cache` or `$api->schema()->refresh()`.

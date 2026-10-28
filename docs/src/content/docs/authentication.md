@@ -30,8 +30,8 @@ Setting `auth_mode` (Settings → Authentication):
 Credentials are read from, in order:
 
 1. `apikey: <key>` or `X-API-Key: <key>`
-2. `Authorization: Bearer <api key or JWT>` — values starting with `gr_` are API keys, anything else a JWT
-3. `?apikey=<key>` — only when `allow_query_apikey` is enabled (keys leak into access logs)
+2. `Authorization: Bearer <api key or JWT>` - values starting with `gr_` are API keys, anything else a JWT
+3. `?apikey=<key>` - only when `allow_query_apikey` is enabled (keys leak into access logs)
 
 Like Supabase, a client may send the public `anon` key in `apikey` **and** a user JWT in `Authorization`; the JWT
 then defines the role. Invalid credentials are always a `401` (they never fall back to `anon`).
@@ -50,7 +50,7 @@ Typical setup: ship the `anon` key in public clients (with `anon` permissions li
 
 Grocery Restable verifies HMAC JWTs (`HS256`, `HS384`, `HS512`) signed with the configured secret
 (Settings → JWT, or `jwtSecret` in the bootstrap config / `groceryrestable.jwtSecret` in `.env`). It does not issue user
-tokens — your application (login endpoint, CodeIgniter Shield, an identity provider using HMAC) does.
+tokens - your application (login endpoint, CodeIgniter Shield, an identity provider using HMAC) does.
 
 Checks: signature (`alg: none` and asymmetric algorithms are rejected), `exp`, `nbf` (60 s leeway), optional
 `iss` and `aud` (settings `jwt_issuer`, `jwt_audience`).
@@ -151,8 +151,8 @@ Inside callbacks you can still read the framework user (`auth()->user()` with Sh
 
 ## Rate limiting
 
-Grocery Restable does not rate limit API calls itself. Use CodeIgniter's `throttle` filter via `$apiFilters`, or your
-reverse proxy (nginx `limit_req`). Admin logins are throttled (5 failures / 15 min per IP).
+Every API request is counted per client (API key, JWT user or IP) and limited; failed authentications count against
+the IP. See [Rate limiting](rate-limiting.md). Admin logins are throttled separately (5 failures / 15 min per IP).
 
 ## CORS
 

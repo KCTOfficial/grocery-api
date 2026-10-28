@@ -58,7 +58,7 @@ embedded output.
 
 ## Upload callbacks
 
-`callbackBeforeUpload`, `callbackAfterUpload`, `callbackUpload` — see
+`callbackBeforeUpload`, `callbackAfterUpload`, `callbackUpload` - see
 [Uploads & storage](uploads-and-storage.md#upload-callbacks).
 
 ## Actions

@@ -187,9 +187,10 @@ final class ResourceReader
             throw ApiException::notFound('No belongs_to or many_to_many relation for "' . $field . '".');
         }
 
-        $target = $this->target($ctx, $relation, $auth);
+        $target = $this->target($ctx, $relation, $auth, true);
         $key = $target['key'];
-        $titleColumns = array_values(array_filter($relation->titleColumns(), $target['table']->hasColumn(...)));
+        // Only title columns the caller could read on the target itself (never hidden / password columns).
+        $titleColumns = array_values(array_filter($relation->titleColumns(), static fn (string $c): bool => in_array($c, $target['allowed'], true)));
         $columns = array_values(array_unique([$key, ...$titleColumns]));
         $where = SqlFragment::and(
             $target['extra'],
@@ -212,6 +213,36 @@ final class ResourceReader
     }
 
     /**
+     * The subset of $ids that exist on the other side of $relation and that $auth may read
+     * (many_to_many writes must not attach rows the caller cannot see).
+     *
+     * @param list<mixed> $ids
+     * @return list<string>
+     */
+    public function visibleRelatedIds(ResolvedResource $ctx, Relation $relation, array $ids, AuthContext $auth): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $target = $this->target($ctx, $relation, $auth, true);
+        $column = $target['table']->columns[$target['key']];
+        $compiler = $this->compiler($ctx, $auth);
+        $where = SqlFragment::and(
+            new SqlFragment(
+                $ctx->grammar->wrap('r.' . $target['key']) . ' IN (' . implode(', ', array_fill(0, count($ids), '?')) . ')',
+                array_map(static fn (mixed $id): mixed => $compiler->bindValue($column, $id), array_values($ids)),
+            ),
+            $target['extra'],
+        );
+        $rows = $ctx->db->select(
+            'SELECT ' . $ctx->grammar->wrap('r.' . $target['key']) . ' AS k FROM ' . $ctx->grammar->wrapTable($target['table']->name) . ' r' . $where->toWhere(),
+            $where->bindings,
+        );
+
+        return array_map(static fn (array $row): string => (string) $row['k'], $rows);
+    }
+
+    /**
      * Static where() conditions plus scope() callbacks of a resource, compiled for $alias.
      */
     public function rowConditions(ResolvedResource $ctx, AuthContext $auth, string $alias): SqlFragment
@@ -221,7 +252,7 @@ final class ResourceReader
         // Like Supabase's service_role, the service role bypasses row level security scopes.
         $scopes = $auth->isService() ? [] : $ctx->resource->getScopes();
         foreach ($scopes as $scope) {
-            $conditions = new Conditions();
+            $conditions = Conditions::forScope();
             $scope($conditions, $auth);
             $fragments[] = $compiler->conditions($conditions, $ctx->table, $alias);
         }
@@ -234,7 +265,8 @@ final class ResourceReader
     private function compiler(ResolvedResource $ctx, AuthContext $auth): SqlCompiler
     {
         return new SqlCompiler($ctx->grammar, function (Relation $relation) use ($ctx, $auth): array {
-            $target = $this->target($ctx, $relation, $auth);
+            // Filtering on a relation reveals its values, so it needs the same read permission as embedding.
+            $target = $this->target($ctx, $relation, $auth, true);
 
             return [$target['table'], $target['allowed'], $target['extra']];
         });
@@ -276,6 +308,9 @@ final class ResourceReader
             $defaults = $resolved->resource->listColumns($table);
             $extra[] = $this->rowConditions($resolved, $auth, 'r');
         } else {
+            if ($this->registry->isWithheld($relation->table, $parent->connectionName)) {
+                throw ApiException::forbidden(sprintf('Relation "%s" points to "%s", which is not exposed by the API.', $relation->name, $relation->table));
+            }
             // Not exposed as a resource: only the key and the title columns are visible.
             $allowed = array_values(array_unique(array_filter(
                 [$table->singlePrimaryKey(), $key, ...$relation->titleColumns()],
@@ -311,7 +346,7 @@ final class ResourceReader
                 $columns[$item['alias']] = $item;
                 continue;
             }
-            // "select=title,actors" — a relation without parenthesis embeds all its columns.
+            // "select=title,actors" - a relation without parenthesis embeds all its columns.
             if ($ctx->resource->getRelation($item['column']) !== null) {
                 $embeds[$item['alias']] = ['relation' => $item['column'], 'alias' => $item['alias'], 'node' => SelectNode::star(), 'explicit' => true];
                 continue;

@@ -14,13 +14,16 @@ use GroceryRestable\Database\ConnectionManager;
 use GroceryRestable\Database\Schema\SchemaRepository;
 use GroceryRestable\Exception\ConfigurationException;
 use GroceryRestable\Http\ApiKernel;
+use GroceryRestable\Http\RateLimiter;
 use GroceryRestable\Http\Request;
 use GroceryRestable\Http\Response;
+use GroceryRestable\Logging\LogStore;
 use GroceryRestable\OpenApi\OpenApiGenerator;
 use GroceryRestable\Resource\Resource;
 use GroceryRestable\Resource\ResourceRegistry;
 use GroceryRestable\Service\ResourceReader;
 use GroceryRestable\Service\ResourceWriter;
+use GroceryRestable\Service\StorageJanitor;
 use GroceryRestable\Service\StorageService;
 use GroceryRestable\Service\UploadService;
 use GroceryRestable\Store\ConfigStore;
@@ -41,7 +44,7 @@ use GroceryRestable\Validation\ValidatorInterface;
  */
 final class GroceryRestable
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.1.0';
 
     private ?ConfigStore $store = null;
     private ?ConnectionManager $connections = null;
@@ -54,6 +57,9 @@ final class GroceryRestable
     private ?ResourceReader $reader = null;
     private ?ResourceWriter $writer = null;
     private ?ApiKernel $apiKernel = null;
+    private ?LogStore $logs = null;
+    private ?RateLimiter $rateLimiter = null;
+    private ?StorageJanitor $janitor = null;
     private ?AdminKernel $adminKernel = null;
 
     /** @var array<string, array{callback: callable, methods: list<string>, roles: list<string>, description: string, connection: string|null}> */
@@ -169,6 +175,27 @@ final class GroceryRestable
             $this->store(),
             (int) $this->config->get('maxBulkRows', 1000),
         );
+    }
+
+    /**
+     * JSON request / admin logs, one file per day.
+     */
+    public function logs(): LogStore
+    {
+        return $this->logs ??= new LogStore($this->config->logPath(), $this->store());
+    }
+
+    /**
+     * Orphan file detection and storage housekeeping.
+     */
+    public function janitor(): StorageJanitor
+    {
+        return $this->janitor ??= new StorageJanitor($this);
+    }
+
+    public function rateLimiter(): RateLimiter
+    {
+        return $this->rateLimiter ??= RateLimiter::create($this->store());
     }
 
     public function api(): ApiKernel
@@ -307,12 +334,21 @@ final class GroceryRestable
     }
 
     /**
+     * OpenAPI document. With $auth, only what that caller can use is described
+     * (resources with at least one permission, readable buckets, callable functions).
+     *
      * @return array<string, mixed>
      */
-    public function openApi(string $serverUrl): array
+    public function openApi(string $serverUrl, ?AuthContext $auth = null): array
     {
+        $auth ??= AuthContext::service();
+        $authenticator = $this->authenticator();
         $resolved = [];
         foreach ($this->registry()->all() as $resource) {
+            $usable = $auth->isService() || array_filter(Resource::PERMISSIONS, static fn (string $p): bool => $authenticator->allows($auth, $resource, $p)) !== [];
+            if (! $usable) {
+                continue;
+            }
             try {
                 $resolved[] = $this->registry()->resolve($resource);
             } catch (ConfigurationException) {
@@ -320,10 +356,15 @@ final class GroceryRestable
             }
         }
 
+        $functions = array_filter(
+            $this->functions(),
+            static fn (array $f): bool => $auth->isService() || in_array('*', $f['roles'], true) || in_array($auth->role, $f['roles'], true),
+        );
+
         return (new OpenApiGenerator())->generate(
             $resolved,
-            $this->storage()->listBuckets(AuthContext::service()),
-            array_map(static fn (array $f): array => array_diff_key($f, ['callback' => true]), $this->functions()),
+            $this->storage()->listBuckets($auth),
+            array_map(static fn (array $f): array => array_diff_key($f, ['callback' => true]), $functions),
             $this->store()->settings(),
             $serverUrl,
         );

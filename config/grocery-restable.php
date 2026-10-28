@@ -2,7 +2,7 @@
 
 /**
  * Grocery Restable bootstrap configuration for standalone PHP applications.
- * (CodeIgniter 4 uses app/Config/GroceryRestable.php instead — see docs/codeigniter4.md.)
+ * (CodeIgniter 4 uses app/Config/GroceryRestable.php instead - see docs/codeigniter4.md.)
  *
  * Copy this file into your project and pass it to GroceryRestable::create().
  * Everything else (connections, resources, keys, settings) is managed from the

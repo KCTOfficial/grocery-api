@@ -44,11 +44,11 @@ Set `setupToken` and open `/grocery-restable/setup?token=…`, or run `php spark
 ### "No input file specified." (CodeIgniter on Apache with PHP FastCGI, e.g. Laragon)
 CodeIgniter's default `public/.htaccess` rewrites to `index.php/$1` (PATH_INFO). With PHP running as FastCGI /
 `php-cgi` this fails for every URL that has a path, so the home page works but `/api/...` and `/grocery-restable`
-answer "No input file specified.". Rewrite to `index.php` without PATH_INFO — CodeIgniter 4 reads the path from
+answer "No input file specified.". Rewrite to `index.php` without PATH_INFO - CodeIgniter 4 reads the path from
 `REQUEST_URI` anyway:
 
 ```apache
-# public/.htaccess — replace:  RewriteRule ^([\s\S]*)$ index.php/$1 [L,NC,QSA]
+# public/.htaccess - replace:  RewriteRule ^([\s\S]*)$ index.php/$1 [L,NC,QSA]
 RewriteRule ^ index.php [L,QSA]
 ```
 
@@ -74,7 +74,7 @@ The file's real type differs from its extension (e.g. a renamed file). Convert t
 `php spark grocery-restable:admin admin --reset` (CodeIgniter) or `$api->store()->changePassword($id, $password)`.
 
 ### How do I start over?
-Delete the SQLite store (`writable/grocery-restable/grocery-restable.sqlite`) — this removes settings, GUI resources, keys and
+Delete the SQLite store (`writable/grocery-restable/grocery-restable.sqlite`) - this removes settings, GUI resources, keys and
 users; uploaded files and the key file stay.
 
 ### Can I use PostgreSQL schemas other than `public`?

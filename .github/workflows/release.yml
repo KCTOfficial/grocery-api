@@ -1,17 +1,17 @@
-# Release pipeline, triggered by pushing a version tag (v1.2.3, or v1.2.3-rc.1 for a pre-release):
-#   1. verify   the tag matches GroceryRestable::VERSION and the PHPUnit suite passes
+# Release pipeline, triggered by pushing a version tag: 1.2.3 or v1.2.3 (1.2.3-rc.1 / v1.2.3-rc.1 for a pre-release):
+#   1. verify   the tag (without a leading "v") matches GroceryRestable::VERSION and the PHPUnit suite passes
 #   2. docs     builds the documentation website (docs/, Astro + Starlight)
 #   3. deploy   publishes the website to GitHub Pages
 #   4. release  creates the GitHub Release for the tag, with notes from CHANGELOG.md
 #
-#   git tag v1.1.0 && git push origin v1.1.0
+#   git tag 1.2.0 && git push origin 1.2.0
 #
 # Running the workflow manually (Actions → Release → Run workflow) on a branch tests and redeploys the
 # documentation without creating a release.
 #
 # One-time setup:
 #   - Settings → Pages → Build and deployment → Source: "GitHub Actions".
-#   - Settings → Environments → github-pages → Deployment branches and tags: add the tag rule "v*"
+#   - Settings → Environments → github-pages → Deployment branches and tags: add the tag rules "[0-9]*" and "v*"
 #     (by default only the default branch may deploy, and tag deployments are rejected).
 # Optional repository variables (Settings → Secrets and variables → Actions → Variables):
 #   DOCS_SITE_URL   e.g. https://docs.example.com   (default: https://<owner>.github.io)
@@ -21,6 +21,8 @@ name: Release
 on:
   push:
     tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
@@ -49,7 +51,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           version=$(grep -oP "const VERSION = '\K[^']+" src/GroceryRestable.php)
-          if [ "v${version}" != "$TAG" ]; then
+          # Tags may be written with or without a leading "v" (1.1.0 or v1.1.0).
+          if [ "${TAG#v}" != "${version}" ]; then
             echo "::error file=src/GroceryRestable.php::Tag ${TAG} does not match GroceryRestable::VERSION (${version})."
             exit 1
           fi
